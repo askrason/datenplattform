@@ -95,6 +95,7 @@ postgresql:
         CREATE ROLE superset WITH LOGIN;
         CREATE ROLE metabase WITH LOGIN;
         CREATE ROLE keycloak WITH LOGIN;
+        CREATE ROLE trino WITH LOGIN;
 
         -- ============================================================
         -- Least Privilege: User haben RECHTE nur auf ihre eigene DB
@@ -104,6 +105,11 @@ postgresql:
         GRANT ALL PRIVILEGES ON DATABASE superset TO superset;
         GRANT ALL PRIVILEGES ON DATABASE metabase TO metabase;
         GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
+        GRANT CONNECT ON DATABASE airflow TO trino;
+        GRANT CONNECT ON DATABASE openmetadata TO trino;
+        GRANT CONNECT ON DATABASE superset TO trino;
+        GRANT CONNECT ON DATABASE metabase TO trino;
+        GRANT CONNECT ON DATABASE keycloak TO trino;
 
   # ============================================================
   # Read-Replica

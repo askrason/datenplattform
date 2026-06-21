@@ -151,47 +151,140 @@ postgresql:
       -- ein User pro DB, kein SUPERUSER) erfolgt im Rahmen von TICKET-002.
 
 # ============================================================
-# TRINO
+# TRINO (TICKET-006) – volle Konfiguration in values/trino.yaml
 # ============================================================
+# Distributed SQL Query Engine mit Coordinator + 3 Worker.
+# Kataloge: Hive (MinIO/S3), Iceberg, PostgreSQL.
+# Details siehe values/trino.yaml
 trino:
   enabled: true
+
   server:
     workers: 3
+
+  jvm:
+    maxHeapSize: "6G"
+    gcMethod:
+      type: "UseG1GC"
+      g1:
+        heapRegionSize: "32M"
+
+  config:
+    query:
+      maxMemory: "5GB"
+      maxMemoryPerNode: "2GB"
+      maxTotalMemoryPerNode: "3GB"
+    task:
+      maxWorkerThreads: 8
+    spillEnabled: true
+    spillPath: /tmp/trino-spill
+    spillOrder: "ORDER_BY"
+    spillWindowOperator: true
+
   coordinator:
+    replicas: 1
     podSecurityContext:
       <<: *defaultPodSecurityContext
       runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
     securityContext:
       <<: *defaultSecurityContext
+      # AUSNAHME: readOnlyRootFilesystem deaktiviert.
+      # Grund: Trino Coordinator schreibt Query-History und temporäre Dateien.
+      # Mitigiert durch: emptyDir für /tmp/trino-spill, NetworkPolicy.
+      readOnlyRootFilesystem: false
     resources:
       requests: { cpu: 1000m, memory: 2Gi }
       limits:   { cpu: 4000m, memory: 8Gi }
+    extraVolumes:
+      - name: trino-spill
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: trino-spill
+        mountPath: /tmp/trino-spill
+
   worker:
+    replicas: 3
     podSecurityContext:
       <<: *defaultPodSecurityContext
       runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
     securityContext:
       <<: *defaultSecurityContext
+      # AUSNAHME: readOnlyRootFilesystem deaktiviert.
+      # Grund: Trino Worker benötigt Spill-to-Disk bei großen Queries.
+      # Mitigiert durch: emptyDir für /tmp/trino-spill, NetworkPolicy.
+      readOnlyRootFilesystem: false
     resources:
       requests: { cpu: 2000m, memory: 4Gi }
       limits:   { cpu: 8000m, memory: 16Gi }
+    extraVolumes:
+      - name: trino-spill
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: trino-spill
+        mountPath: /tmp/trino-spill
+
   catalogs:
+    # --- Hive Catalog (MinIO/S3) ---
     minio.properties: |
       connector.name=hive
       hive.metastore=file
+      hive.metastore.catalog.dir=s3://data-raw/
       hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
-      hive.s3.aws-credentials-provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
       hive.s3.path-style-access=true
+      hive.s3.ssl.enabled=false
+      hive.s3.aws-credentials-provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
+
+    # --- Iceberg Catalog (zukunftssicher) ---
+    iceberg.properties: |
+      connector.name=iceberg
+      iceberg.catalog.type=hive_metastore
+      hive.metastore=file
+      hive.metastore.catalog.dir=s3://data-processed/
+      hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
+      hive.s3.path-style-access=true
+      hive.s3.ssl.enabled=false
+
+    # --- PostgreSQL Catalog ---
     postgresql.properties: |
       connector.name=postgresql
-      connection-url=jdbc:postgresql://postgresql:5432/
+      connection-url=jdbc:postgresql://{{ .Release.Name }}-postgresql:5432/
       connection-user=${ENV:TRINO_PG_USER}
       connection-password=${ENV:TRINO_PG_PASSWORD}
-    # KORREKTUR: ursprünglich stand hier
-    #   "hive.s3.endpoint=[minio](http://minio:9000)"
-    # – ein Markdown-Link-Artefakt statt einer gültigen Properties-Zeile.
-    # Korrigiert auf einen echten Service-Endpoint (Release-Name-Prefix,
-    # analog zu TICKET-006).
+
+  # --- Credentials via ExternalSecret (nicht in Plain-Text!) ---
+  env:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: trino-minio-credentials
+          key: access-key
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: trino-minio-credentials
+          key: secret-key
+    - name: TRINO_PG_USER
+      valueFrom:
+        secretKeyRef:
+          name: trino-pg-credentials
+          key: username
+    - name: TRINO_PG_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: trino-pg-credentials
+          key: password
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
 
 # ============================================================
 # KEYCLOAK (TICKET-010) – volle Konfiguration in values/keycloak.yaml

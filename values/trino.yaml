@@ -1,0 +1,243 @@
+# ============================================================
+# TICKET-006: Trino Sub-Chart
+# ============================================================
+# Distributed SQL Query Engine mit vorkonfigurierten Katalogen
+# für MinIO (S3/Hive), Iceberg und PostgreSQL.
+#
+# Chart-Repo: https://trinodb.github.io/charts
+# Dokumentation: https://trino.io/docs/current/
+#
+# Architektur:
+# - Coordinator: 1 (stateless, kein HA nötig)
+# - Worker: 3 (parallele Query-Ausführung)
+# - Kataloge: minio (Hive), iceberg, postgresql
+# - Spill-to-Disk für große Queries aktiviert
+# ============================================================
+
+trino:
+  enabled: true
+
+  # ============================================================
+  # Replicas & Topologie
+  # ============================================================
+  server:
+    workers: 3
+
+  # ============================================================
+  # JVM & Memory Configuration
+  # ============================================================
+  jvm:
+    maxHeapSize: "6G"
+    gcMethod:
+      type: "UseG1GC"
+      g1:
+        heapRegionSize: "32M"
+
+  # ============================================================
+  # Trino Configuration
+  # ============================================================
+  config:
+    query:
+      maxMemory: "5GB"
+      maxMemoryPerNode: "2GB"
+      maxTotalMemoryPerNode: "3GB"
+
+    task:
+      maxWorkerThreads: 8
+
+    # Spill-to-Disk für große Queries (benötigt writable filesystem)
+    spillEnabled: true
+    spillPath: /tmp/trino-spill
+    spillOrder: "ORDER_BY"
+    spillWindowOperator: true
+
+  # ============================================================
+  # Security Context – Coordinator & Worker
+  # ============================================================
+  # AUSNAHME: readOnlyRootFilesystem: false, da:
+  # - Coordinator: Query-History, temporäre Dateien, Spill-Verzeichnis
+  # - Worker: Spill-to-Disk bei großen Queries
+  # Mitigiert durch: emptyDir für /tmp/trino-spill, NetworkPolicy
+
+  coordinator:
+    enabled: true
+    replicas: 1
+
+    podSecurityContext:
+      runAsNonRoot: true
+      fsGroupChangePolicy: OnRootMismatch
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false  # AUSNAHME: s. oben
+      runAsNonRoot: true
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+      limits:
+        cpu: 4000m
+        memory: 8Gi
+
+  worker:
+    replicas: 3
+
+    podSecurityContext:
+      runAsNonRoot: true
+      fsGroupChangePolicy: OnRootMismatch
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false  # AUSNAHME: s. oben
+      runAsNonRoot: true
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+
+    resources:
+      requests:
+        cpu: 2000m
+        memory: 4Gi
+      limits:
+        cpu: 8000m
+        memory: 16Gi
+
+  # ============================================================
+  # Volumes für Spill-to-Disk
+  # ============================================================
+  coordinator:
+    extraVolumes:
+      - name: trino-spill
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: trino-spill
+        mountPath: /tmp/trino-spill
+
+  worker:
+    extraVolumes:
+      - name: trino-spill
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: trino-spill
+        mountPath: /tmp/trino-spill
+
+  # ============================================================
+  # Kataloge: Hive (MinIO), Iceberg, PostgreSQL
+  # ============================================================
+  catalogs:
+    # --- Hive Catalog (MinIO/S3) ---
+    # Für unstrukturierte & Hive-Tabellen auf MinIO/S3.
+    # Verwendet File-basierter Metastore (kann später auf Glue/Polaris migriert werden).
+    minio.properties: |
+      connector.name=hive
+      hive.metastore=file
+      hive.metastore.catalog.dir=s3://data-raw/
+      hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
+      hive.s3.path-style-access=true
+      hive.s3.ssl.enabled=false
+      hive.s3.aws-credentials-provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
+      # AWS_ACCESS_KEY_ID & AWS_SECRET_ACCESS_KEY werden als Env-Vars injiziert
+
+    # --- Iceberg Catalog (zukunftssicher) ---
+    # Empfohlen für dbt-Trino Integration und strukturierte Transformationen.
+    # Verwendet Hive Metastore auf MinIO für Metadaten.
+    iceberg.properties: |
+      connector.name=iceberg
+      iceberg.catalog.type=hive_metastore
+      hive.metastore=file
+      hive.metastore.catalog.dir=s3://data-processed/
+      hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
+      hive.s3.path-style-access=true
+      hive.s3.ssl.enabled=false
+
+    # --- PostgreSQL Catalog ---
+    # Direkter Zugriff auf operative Datenbanken (Airflow, OpenMetadata etc.).
+    # Schema-Zugriff: SELECT * FROM postgresql.{database}.{schema}.{table}
+    postgresql.properties: |
+      connector.name=postgresql
+      connection-url=jdbc:postgresql://{{ .Release.Name }}-postgresql:5432/
+      connection-user=${ENV:TRINO_PG_USER}
+      connection-password=${ENV:TRINO_PG_PASSWORD}
+
+  # ============================================================
+  # Credentials via ExternalSecret (nicht in Plain-Text!)
+  # ============================================================
+  env:
+    # MinIO / S3 Credentials (Hive & Iceberg)
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: trino-minio-credentials
+          key: access-key
+
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: trino-minio-credentials
+          key: secret-key
+
+    # PostgreSQL Credentials
+    - name: TRINO_PG_USER
+      valueFrom:
+        secretKeyRef:
+          name: trino-pg-credentials
+          key: username
+
+    - name: TRINO_PG_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: trino-pg-credentials
+          key: password
+
+  # ============================================================
+  # Ingress (optional, falls externe Trino-UI nötig ist)
+  # ============================================================
+  # Normalerweise: Zugriff nur über interne Pod-to-Pod-Kommunikation
+  # (Superset/Metabase/OpenMetadata → Trino Port 8080).
+  # Für Admin-UI kann Ingress aktiviert werden (mit TLS + Auth).
+  ingress:
+    enabled: false
+    # Bei Aktivierung:
+    # className: "nginx"
+    # hosts:
+    #   - host: "trino.{{ .Values.global.domain }}"
+    #     paths:
+    #       - path: /
+    #         pathType: Prefix
+    # tls:
+    #   - secretName: trino-tls
+    #     hosts:
+    #       - "trino.{{ .Values.global.domain }}"
+
+  # ============================================================
+  # Auth (vorbereitet für TICKET-010: Keycloak OIDC)
+  # ============================================================
+  # Trino-Standard: kein Auth nötig wenn nur über NetworkPolicy erreichbar.
+  # Produktiv: OIDC mit Keycloak aktivieren (benötigt additional Config).
+  # TODO (TICKET-010): oauth2-proxy o.ä. als Sidecar hinzufügen.
+
+  # ============================================================
+  # Service (wird von Superset/Metabase/OM verwendet)
+  # ============================================================
+  service:
+    type: ClusterIP
+    port: 8080
+
+  # ============================================================
+  # Pod Disruption Budget (für Worker-Scaling)
+  # ============================================================
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2  # Mindestens 2 Worker müssen laufen
