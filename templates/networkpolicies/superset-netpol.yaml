@@ -1,0 +1,92 @@
+{{- if .Values.networkPolicies.enabled }}
+# ============================================================
+# TICKET-008: Apache Superset NetworkPolicy
+# ============================================================
+# Superset Webserver + Celery Worker benötigen Zugriff auf:
+# - Trino (Port 8080, SQL-Queries)
+# - PostgreSQL (Port 5432, App-Metastore)
+# - Redis (Port 6379, Celery Broker – intern)
+# - Keycloak (Port 8080/8443, OIDC Token Validation)
+# - DNS (Port 53)
+#
+# Ingress: Port 8088 vom Ingress Controller
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-superset-netpol
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: superset
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: superset
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # ============================================================
+  # INGRESS: Wer darf mit Superset sprechen?
+  # ============================================================
+  ingress:
+    # --- Ingress Controller → Superset UI/API (Port 8088) ---
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8088
+
+  # ============================================================
+  # EGRESS: Wohin darf Superset verbindungen herstellen?
+  # ============================================================
+  egress:
+    # --- DNS ---
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # --- Trino (SQL-Queries, Port 8080) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trino
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # --- PostgreSQL (App-Metastore, Port 5432) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # --- Redis (Celery Broker, Port 6379 – intern) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # --- Keycloak (OIDC Token Validation) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8443
+{{- end }}

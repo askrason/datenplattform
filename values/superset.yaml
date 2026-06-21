@@ -1,0 +1,234 @@
+# ============================================================
+# TICKET-008: Apache Superset Sub-Chart
+# ============================================================
+# Apache Superset als primäres BI-Tool mit Trino-Integration.
+# - Webserver (2 Replicas) + Celery Worker (2) für async Queries
+# - Keycloak OIDC für SSO
+# - Redis als Celery Broker
+# - PostgreSQL Metastore
+#
+# Chart-Repo: https://apache.github.io/superset
+# Dokumentation: https://superset.apache.org/docs/
+# ============================================================
+
+superset:
+  enabled: true
+
+  # ============================================================
+  # Replicas (HA für Webserver)
+  # ============================================================
+  replicaCount: 2
+
+  # ============================================================
+  # Security Context
+  # ============================================================
+  # AUSNAHME: readOnlyRootFilesystem: false
+  # Grund: Superset schreibt Flask-Sessions, Jinja-Template-Cache,
+  #        temporäre Chart-Exports zu /tmp und /home/superset.
+  # Mitigiert durch: emptyDir für /tmp und /home/superset,
+  #                  NetworkPolicy restriktiv, kein Netzwerk-Write.
+
+  podSecurityContext:
+    runAsNonRoot: true
+    fsGroupChangePolicy: OnRootMismatch
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+  # ============================================================
+  # Volumes für /tmp und /home/superset
+  # ============================================================
+  extraVolumes:
+    - name: tmp
+      emptyDir: {}
+    - name: home
+      emptyDir: {}
+
+  extraVolumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    - name: home
+      mountPath: /home/superset
+
+  # ============================================================
+  # Ressourcen
+  # ============================================================
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+  # ============================================================
+  # Datenbankverbindung (PostgreSQL `superset` DB)
+  # ============================================================
+  supersetNode:
+    connections:
+      # Hostname: Release-Name + Service-Name des PostgreSQL-Charts
+      db_host: "{{ .Release.Name }}-postgresql"
+      db_port: 5432
+      db_name: superset
+      db_user: superset
+      # Passwort wird via extraSecretEnv injiziert (aus ExternalSecret)
+      db_pass: ""
+
+  # ============================================================
+  # Flask SECRET_KEY (aus Vault via ExternalSecret)
+  # ============================================================
+  extraSecretEnv:
+    SUPERSET_SECRET_KEY:
+      secretName: superset-credentials
+      secretKey: secret-key
+    SUPERSET_DATABASE_PASSWORD:
+      secretName: superset-db-credentials
+      secretKey: password
+
+  # ============================================================
+  # Keycloak OIDC Authentication
+  # ============================================================
+  # Superset nutzt flask-appbuilder OAuth2 für OIDC.
+  # Client-Secret wird aus Vault injiziert.
+  configOverrides:
+    oidc_auth: |
+      from flask_appbuilder.security.manager import AUTH_OAUTH
+      AUTH_TYPE = AUTH_OAUTH
+      OAUTH_PROVIDERS = [{
+        "name": "keycloak",
+        "icon": "fa-key",
+        "token_key": "access_token",
+        "remote_app": {
+          "client_id": "superset",
+          "client_secret": "{{ env(\"SUPERSET_KEYCLOAK_CLIENT_SECRET\") }}",
+          "server_metadata_url": "https://{{ .Values.global.domain }}/auth/realms/data-platform/.well-known/openid-configuration",
+          "client_kwargs": {"scope": "openid email profile"},
+        }
+      }]
+      AUTH_USER_REGISTRATION = True
+      AUTH_USER_REGISTRATION_ROLE = "Gamma"  # Nur Lese-Rechte für neue User
+      AUTH_ROLES_MAPPING = {
+        "superset-admin": ["Admin"],
+        "superset-analyst": ["Alpha"],
+        "superset-viewer": ["Gamma"],
+      }
+      AUTH_ROLES_SYNC_AT_LOGIN = True
+
+  # Zusätzliche Env-Var für Keycloak Client Secret
+  extraEnv:
+    - name: SUPERSET_KEYCLOAK_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: superset-oidc-credentials
+          key: client-secret
+
+  # ============================================================
+  # Init-Script: Trino-Datenquelle vorkonfigurieren
+  # ============================================================
+  # Nach dem Deployment wird Superset initialisiert und
+  # Trino als Default-Datenquelle hinzugefügt.
+  init:
+    initscript: |
+      #!/bin/bash
+      set -e
+      echo "Initializing Superset..."
+      superset db upgrade
+      superset init
+      echo "Adding Trino datasource..."
+      # Trino-Datenquelle mit Iceberg-Katalog
+      superset set-database-uri \
+        --database-name "Trino (Data Platform)" \
+        --uri "trino://trino-user@{{ .Release.Name }}-trino:8080/iceberg" || true
+      echo "Superset initialized successfully"
+
+  # ============================================================
+  # Celery Worker (für async Queries und Reports)
+  # ============================================================
+  # Superset benötigt Celery Worker für lange laufende Queries.
+  # Reports und Caching erfolgen asynchron via Celery-Task-Queue.
+  celeryWorker:
+    enabled: true
+    replicaCount: 2
+
+    podSecurityContext:
+      <<: *defaultPodSecurityContext
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+
+    securityContext:
+      <<: *defaultSecurityContext
+      readOnlyRootFilesystem: false
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+
+  # ============================================================
+  # Redis (als Celery Broker)
+  # ============================================================
+  # Superset-internes Redis für Celery Message Queue.
+  redis:
+    enabled: true
+
+    master:
+      podSecurityContext:
+        <<: *defaultPodSecurityContext
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      containerSecurityContext:
+        <<: *defaultSecurityContext
+
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+  # ============================================================
+  # Service
+  # ============================================================
+  service:
+    type: ClusterIP
+    port: 8088
+
+  # ============================================================
+  # Ingress
+  # ============================================================
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"  # Falls cert-manager vorhanden
+    hosts:
+      - host: "bi.{{ .Values.global.domain }}"
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: superset-tls
+        hosts:
+          - "bi.{{ .Values.global.domain }}"
+
+  # ============================================================
+  # Weitere Konfiguration
+  # ============================================================
+  # Superset Chart settings (s. https://github.com/apache/superset/tree/master/helm/superset)
+  # Weitere Anpassungen bei Bedarf dort hinzufügen.

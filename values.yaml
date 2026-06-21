@@ -391,20 +391,155 @@ openmetadata:
     port: 8585
 
 # ============================================================
-# APACHE SUPERSET  (bevorzugt gegenüber Metabase für OSS)
+# APACHE SUPERSET (TICKET-008) – volle Konfiguration in values/superset.yaml
 # ============================================================
+# Primäres BI-Tool (bevorzugt gegenüber Metabase für OSS).
+# - Webserver (2 Replicas) + Celery Worker (2) für async Queries
+# - Keycloak OIDC für SSO
+# - Redis als Celery Broker
+# - Trino als vorkonfigurierte Datenquelle
+# Details siehe values/superset.yaml
 superset:
   enabled: true
+
+  replicaCount: 2
+
   podSecurityContext:
     <<: *defaultPodSecurityContext
     runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
   securityContext:
     <<: *defaultSecurityContext
+    # AUSNAHME: readOnlyRootFilesystem deaktiviert.
+    # Grund: Superset schreibt Flask-Sessions, Jinja-Cache, Chart-Exports.
+    # Mitigiert durch: emptyDir für /tmp und /home/superset, NetworkPolicy.
     readOnlyRootFilesystem: false
-  extraEnvVarsSecret: superset-credentials
+
+  extraVolumes:
+    - name: tmp
+      emptyDir: {}
+    - name: home
+      emptyDir: {}
+
+  extraVolumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    - name: home
+      mountPath: /home/superset
+
   resources:
     requests: { cpu: 500m, memory: 1Gi }
     limits:   { cpu: 2000m, memory: 4Gi }
+
+  supersetNode:
+    connections:
+      db_host: "{{ .Release.Name }}-postgresql"
+      db_port: 5432
+      db_name: superset
+      db_user: superset
+      db_pass: ""
+
+  extraSecretEnv:
+    SUPERSET_SECRET_KEY:
+      secretName: superset-credentials
+      secretKey: secret-key
+    SUPERSET_DATABASE_PASSWORD:
+      secretName: superset-db-credentials
+      secretKey: password
+
+  extraEnv:
+    - name: SUPERSET_KEYCLOAK_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: superset-oidc-credentials
+          key: client-secret
+
+  configOverrides:
+    oidc_auth: |
+      from flask_appbuilder.security.manager import AUTH_OAUTH
+      AUTH_TYPE = AUTH_OAUTH
+      OAUTH_PROVIDERS = [{
+        "name": "keycloak",
+        "icon": "fa-key",
+        "token_key": "access_token",
+        "remote_app": {
+          "client_id": "superset",
+          "client_secret": "{{ env(\"SUPERSET_KEYCLOAK_CLIENT_SECRET\") }}",
+          "server_metadata_url": "https://{{ .Values.global.domain }}/auth/realms/data-platform/.well-known/openid-configuration",
+          "client_kwargs": {"scope": "openid email profile"},
+        }
+      }]
+      AUTH_USER_REGISTRATION = True
+      AUTH_USER_REGISTRATION_ROLE = "Gamma"
+      AUTH_ROLES_MAPPING = {
+        "superset-admin": ["Admin"],
+        "superset-analyst": ["Alpha"],
+        "superset-viewer": ["Gamma"],
+      }
+      AUTH_ROLES_SYNC_AT_LOGIN = True
+
+  init:
+    initscript: |
+      #!/bin/bash
+      set -e
+      echo "Initializing Superset..."
+      superset db upgrade
+      superset init
+      echo "Adding Trino datasource..."
+      superset set-database-uri \
+        --database-name "Trino (Data Platform)" \
+        --uri "trino://trino-user@{{ .Release.Name }}-trino:8080/iceberg" || true
+      echo "Superset initialized successfully"
+
+  celeryWorker:
+    enabled: true
+    replicaCount: 2
+    podSecurityContext:
+      <<: *defaultPodSecurityContext
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    securityContext:
+      <<: *defaultSecurityContext
+      readOnlyRootFilesystem: false
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits:   { cpu: 2000m, memory: 4Gi }
+
+  redis:
+    enabled: true
+    master:
+      podSecurityContext:
+        <<: *defaultPodSecurityContext
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containerSecurityContext:
+        <<: *defaultSecurityContext
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits:   { cpu: 500m, memory: 512Mi }
+
+  service:
+    type: ClusterIP
+    port: 8088
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hosts:
+      - host: "bi.{{ .Values.global.domain }}"
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: superset-tls
+        hosts:
+          - "bi.{{ .Values.global.domain }}"
 
 # ============================================================
 # METABASE (TICKET-009, optional) – volle Konfiguration in values/metabase.yaml
