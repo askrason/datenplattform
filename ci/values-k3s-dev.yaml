@@ -1,0 +1,100 @@
+# ============================================================
+# TICKET-013: k3s Dev-Environment Overrides
+# ============================================================
+# Reduzierte Ressourcen und Single-Replicas für WSL2 Development.
+#
+# Usage:
+#   helm install data-platform . \
+#     --values values.yaml \
+#     --values ci/values-k3s-dev.yaml
+#
+# Requirements: 8-16 GB RAM (WSL2)
+# ============================================================
+
+# ============================================================
+# Global: k3s local-path StorageClass
+# ============================================================
+global:
+  storageClass: "local-path"
+
+# ============================================================
+# PostgreSQL: Single Primary (no Replica)
+# ============================================================
+postgresql:
+  primary:
+    replicaCount: 1
+  readReplicas:
+    enabled: false
+  persistence:
+    size: 20Gi
+
+# ============================================================
+# Vault: Single Replica (no HA)
+# ============================================================
+vault:
+  server:
+    replicaCount: 1
+  persistence:
+    size: 10Gi
+
+# ============================================================
+# Keycloak: Single Replica (no Infinispan Clustering)
+# ============================================================
+keycloak:
+  replicaCount: 1
+  cache:
+    enabled: false
+
+# ============================================================
+# MinIO: Standalone Mode (single node)
+# ============================================================
+minio:
+  mode: standalone
+  replicas: 1
+  persistence:
+    size: 100Gi
+
+# ============================================================
+# Airflow: Reduced Resources
+# ============================================================
+airflow:
+  scheduler:
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: 500m, memory: 1Gi }
+
+# ============================================================
+# Superset: Single Replica
+# ============================================================
+superset:
+  replicaCount: 1
+  celeryWorker:
+    replicaCount: 1
+  redis:
+    master:
+      resources:
+        requests: { cpu: 50m, memory: 128Mi }
+        limits: { cpu: 100m, memory: 256Mi }
+
+# ============================================================
+# Trino: Single Coordinator, 1 Worker
+# ============================================================
+trino:
+  server:
+    workers: 1
+  coordinator:
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits: { cpu: 1000m, memory: 2Gi }
+
+# ============================================================
+# OpenMetadata: Single Replica
+# ============================================================
+openmetadata:
+  replicaCount: 1
+
+# ============================================================
+# Metabase: Single Replica
+# ============================================================
+metabase:
+  replicaCount: 1
