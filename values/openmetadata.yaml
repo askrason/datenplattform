@@ -76,7 +76,8 @@ openmetadata:
       port: 5432
       driverClass: "org.postgresql.Driver"
       dbScheme: "postgresql"
-      dbUseSSL: false
+      # SECURITY FIX: Enable TLS for encrypted PostgreSQL connections
+      dbUseSSL: true
       databaseName: openmetadata
       # Credentials aus ExternalSecret (s. templates/externalsecrets/)
       existingSecret: openmetadata-db-credentials
@@ -92,10 +93,11 @@ openmetadata:
     enabled: true
     className: "org.openmetadata.service.clients.pipeline.airflow.AirflowRESTClient"
     # Zeigt auf Airflow aus TICKET-005 (nicht OM-internes Airflow)
-    apiEndpoint: "http://{{ .Release.Name }}-airflow-webserver:8080"
+    apiEndpoint: "https://{{ .Release.Name }}-airflow-webserver:8080"
     # OM metadaten API (wird von Airflow-Ingestion DAGs verwendet, um Metadaten zu pushen)
-    metadataApiEndpoint: "http://{{ .Release.Name }}-openmetadata:8585/api"
-    verifySSL: false
+    metadataApiEndpoint: "https://{{ .Release.Name }}-openmetadata:8585/api"
+    # SECURITY FIX: Enable TLS certificate verification
+    verifySSL: true
     # Auth-Token aus Secret
     secretsManagerCredentials:
       existingSecret: openmetadata-airflow-credentials

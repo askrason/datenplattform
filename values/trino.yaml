@@ -146,7 +146,8 @@ trino:
       hive.metastore.catalog.dir=s3://data-raw/
       hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
       hive.s3.path-style-access=true
-      hive.s3.ssl.enabled=false
+      # SECURITY FIX: Enable TLS for S3 connections
+hive.s3.ssl.enabled=true
       hive.s3.aws-credentials-provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
       # AWS_ACCESS_KEY_ID & AWS_SECRET_ACCESS_KEY werden als Env-Vars injiziert
 
@@ -160,7 +161,8 @@ trino:
       hive.metastore.catalog.dir=s3://data-processed/
       hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
       hive.s3.path-style-access=true
-      hive.s3.ssl.enabled=false
+      # SECURITY FIX: Enable TLS for S3 connections
+hive.s3.ssl.enabled=true
 
     # --- PostgreSQL Catalog ---
     # Direkter Zugriff auf operative Datenbanken (Airflow, OpenMetadata etc.).

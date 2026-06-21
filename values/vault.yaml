@@ -30,7 +30,9 @@ vault:
 
           listener "tcp" {
             address       = "[::]:8200"
-            tls_disable   = 1
+            # SECURITY FIX: Enable TLS for Vault API encryption
+            # Note: Requires TLS certificates; in production use cert-manager
+            tls_disable   = 0
             cluster_address = "[::]:8201"
           }
 

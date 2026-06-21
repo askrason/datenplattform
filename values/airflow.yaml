@@ -240,8 +240,9 @@ airflow:
         "remote_app": {
           "client_id": "airflow",
           "client_secret": "{{ KEYCLOAK_CLIENT_SECRET }}",  # wird aus Secret injiziert
-          "server_metadata_url": "http://{{ .Release.Name }}-keycloak:8080/realms/data-platform/.well-known/openid-configuration",
-          "api_base_url": "http://{{ .Release.Name }}-keycloak:8080/realms/data-platform/protocol/openid-connect",
+          # SECURITY FIX: Use HTTPS for OIDC metadata and API endpoints
+          "server_metadata_url": "https://{{ .Release.Name }}-keycloak:8080/realms/data-platform/.well-known/openid-configuration",
+          "api_base_url": "https://{{ .Release.Name }}-keycloak:8080/realms/data-platform/protocol/openid-connect",
           "request_token_params": {
             "scope": "openid email profile"
           },
@@ -295,6 +296,13 @@ airflow:
     # MinIO Endpoint für S3
     - name: AWS_S3_ENDPOINT_URL
       value: "http://{{ .Release.Name }}-minio:9000"
+
+    # Keycloak OIDC Client Secret (SECURITY FIX)
+    - name: KEYCLOAK_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: airflow-oidc-credentials
+          key: client-secret
 
   # ============================================================
   # Ingress (Webserver UI)
