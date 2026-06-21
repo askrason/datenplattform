@@ -1,8 +1,8 @@
-{{- if .Values.postgresql.enabled }}
+{{- if .Values.trino.enabled }}
 apiVersion: v1
 kind: Pod
 metadata:
-  name: {{ .Release.Name }}-test-postgresql
+  name: {{ .Release.Name }}-test-trino
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -17,8 +17,8 @@ spec:
     runAsUser: 999
   restartPolicy: Never
   containers:
-    - name: postgresql-test
-      image: postgres:16-alpine
+    - name: trino-test
+      image: curlimages/curl:8.1.0
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
@@ -27,27 +27,15 @@ spec:
           drop: [ALL]
         seccompProfile:
           type: RuntimeDefault
-      env:
-        - name: PGPASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgresql-credentials
-              key: postgres-password
       command:
         - /bin/sh
         - -c
         - |
           set -e
-          echo "Testing PostgreSQL connection..."
-          psql -h {{ .Release.Name }}-postgresql -U postgres -d postgres -c "SELECT 1"
-          echo "✓ PostgreSQL is reachable"
-
-          echo "Checking databases..."
-          for db in airflow openmetadata superset metabase keycloak; do
-            psql -h {{ .Release.Name }}-postgresql -U postgres -d postgres -c "SELECT datname FROM pg_database WHERE datname='$db'" | grep -q "$db"
-            echo "✓ Database '\$db' exists"
-          done
-
+          echo "Testing Trino connectivity..."
+          curl -s -I http://{{ .Release.Name }}-trino:8080/ui/ | head -1 | grep -q "200\|301"
+          echo "✓ Trino UI Port 8080 is reachable"
+          
           echo "All tests passed!"
       resources:
         requests:

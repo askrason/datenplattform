@@ -1,8 +1,8 @@
-{{- if .Values.postgresql.enabled }}
+{{- if .Values.keycloak.enabled }}
 apiVersion: v1
 kind: Pod
 metadata:
-  name: {{ .Release.Name }}-test-postgresql
+  name: {{ .Release.Name }}-test-keycloak
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -17,8 +17,8 @@ spec:
     runAsUser: 999
   restartPolicy: Never
   containers:
-    - name: postgresql-test
-      image: postgres:16-alpine
+    - name: keycloak-test
+      image: curlimages/curl:8.1.0
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
@@ -27,26 +27,18 @@ spec:
           drop: [ALL]
         seccompProfile:
           type: RuntimeDefault
-      env:
-        - name: PGPASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgresql-credentials
-              key: postgres-password
       command:
         - /bin/sh
         - -c
         - |
           set -e
-          echo "Testing PostgreSQL connection..."
-          psql -h {{ .Release.Name }}-postgresql -U postgres -d postgres -c "SELECT 1"
-          echo "✓ PostgreSQL is reachable"
+          echo "Testing Keycloak health..."
+          curl -s http://{{ .Release.Name }}-keycloak:8080/health/ready | grep -q '"status":"UP"'
+          echo "✓ Keycloak /health/ready returns UP"
 
-          echo "Checking databases..."
-          for db in airflow openmetadata superset metabase keycloak; do
-            psql -h {{ .Release.Name }}-postgresql -U postgres -d postgres -c "SELECT datname FROM pg_database WHERE datname='$db'" | grep -q "$db"
-            echo "✓ Database '\$db' exists"
-          done
+          echo "Checking realm data-platform..."
+          curl -s http://{{ .Release.Name }}-keycloak:8080/realms/data-platform | grep -q '"realm":"data-platform"'
+          echo "✓ Realm data-platform exists"
 
           echo "All tests passed!"
       resources:
