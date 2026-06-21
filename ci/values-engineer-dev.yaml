@@ -1,0 +1,83 @@
+# ============================================================
+# TICKET-014: Data Engineer Dev-Environment Overrides
+# ============================================================
+# Airflow + Trino + PostgreSQL + MinIO for DAG/dbt development.
+# NO Vault, Keycloak, OpenMetadata (security not relevant for DAG dev).
+#
+# Usage:
+#   helm install data-platform . \
+#     --values values.yaml \
+#     --values ci/values-engineer-dev.yaml
+#
+# Requirements: 4-6 GB RAM (WSL2)
+# ============================================================
+
+# ============================================================
+# Global: k3s local-path StorageClass
+# ============================================================
+global:
+  storageClass: "local-path"
+
+# ============================================================
+# PostgreSQL: Single Primary (no Replica)
+# ============================================================
+postgresql:
+  primary:
+    replicaCount: 1
+  readReplicas:
+    enabled: false
+  persistence:
+    size: 20Gi
+
+# ============================================================
+# Airflow: Full Stack (DAG Development Focus)
+# ============================================================
+airflow:
+  scheduler:
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: 500m, memory: 1Gi }
+
+# ============================================================
+# Trino: Minimal Configuration
+# ============================================================
+trino:
+  server:
+    workers: 1
+  coordinator:
+    resources:
+      requests: { cpu: 250m, memory: 500Mi }
+      limits: { cpu: 500m, memory: 1Gi }
+
+# ============================================================
+# MinIO: Standalone Mode (single node)
+# ============================================================
+minio:
+  mode: standalone
+  replicas: 1
+  persistence:
+    size: 50Gi
+
+# ============================================================
+# DISABLED: Security/Governance (not needed for DAG dev)
+# ============================================================
+vault:
+  enabled: false
+
+external-secrets:
+  enabled: false
+
+keycloak:
+  enabled: false
+
+openmetadata:
+  enabled: false
+
+# ============================================================
+# DISABLED: BI Tools (not needed for DAG development)
+# ============================================================
+superset:
+  enabled: false
+
+metabase:
+  enabled: false

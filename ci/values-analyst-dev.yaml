@@ -1,0 +1,87 @@
+# ============================================================
+# TICKET-015: Data Analyst Dev-Environment Overrides
+# ============================================================
+# Trino + Superset + Metabase + PostgreSQL for Query/BI development.
+# NO Vault, Keycloak, Airflow, OpenMetadata (not relevant for BI dev).
+#
+# Usage:
+#   helm install data-platform . \
+#     --values values.yaml \
+#     --values ci/values-analyst-dev.yaml
+#
+# Requirements: 6-8 GB RAM (WSL2)
+# ============================================================
+
+# ============================================================
+# Global: k3s local-path StorageClass
+# ============================================================
+global:
+  storageClass: "local-path"
+
+# ============================================================
+# PostgreSQL: Single Primary (no Replica)
+# ============================================================
+postgresql:
+  primary:
+    replicaCount: 1
+  readReplicas:
+    enabled: false
+  persistence:
+    size: 20Gi
+
+# ============================================================
+# Trino: Minimal (Query Engine - the focus)
+# ============================================================
+trino:
+  server:
+    workers: 1
+  coordinator:
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits: { cpu: 1000m, memory: 2Gi }
+
+# ============================================================
+# Superset: Single Replica (Primary BI Tool)
+# ============================================================
+superset:
+  replicaCount: 1
+  celeryWorker:
+    replicaCount: 1
+  redis:
+    master:
+      resources:
+        requests: { cpu: 50m, memory: 128Mi }
+        limits: { cpu: 100m, memory: 256Mi }
+
+# ============================================================
+# Metabase: Single Replica (Secondary BI Tool)
+# ============================================================
+metabase:
+  replicaCount: 1
+
+# ============================================================
+# DISABLED: Storage (can use external S3 if needed)
+# ============================================================
+minio:
+  enabled: false
+
+# ============================================================
+# DISABLED: Orchestration (not needed for Query/Dashboard dev)
+# ============================================================
+airflow:
+  enabled: false
+
+# ============================================================
+# DISABLED: Security/Governance (not needed for BI dev)
+# ============================================================
+vault:
+  enabled: false
+
+external-secrets:
+  enabled: false
+
+keycloak:
+  enabled: false
+
+openmetadata:
+  enabled: false
