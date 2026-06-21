@@ -1,0 +1,308 @@
+# ============================================================
+# APACHE AIRFLOW 3 (TICKET-005) – Workflow Orchestrierung + dbt
+# ============================================================
+# Airflow wird als eigenständiges Sub-Chart deployed (nicht als
+# OpenMetadata-Dependency, siehe ADR-001). Verwendet KubernetesExecutor
+# für dynamische Worker-Pod-Spawning. dbt läuft als Python-Library
+# im Custom Image (nicht als separater Service).
+#
+# WICHTIG: Custom Image airflow-dbt muss vorab gebaut und in die
+# Container Registry gepusht werden (siehe files/airflow-dockerfile/).
+
+airflow:
+  enabled: true
+
+  # ============================================================
+  # Executor: KubernetesExecutor
+  # ============================================================
+  # ADR-002: Kein persistenter Worker-Pool – Scheduler spawnt
+  # Worker-Pods on-demand. Bessere Ressourcennutzung.
+  executor: KubernetesExecutor
+
+  # ============================================================
+  # Deployment-Komponenten
+  # ============================================================
+  webserver:
+    enabled: true
+    replicas: 2
+
+    # Pod & Container Security
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 50000
+      runAsGroup: 50000
+      fsGroupChangePolicy: OnRootMismatch
+      fsGroup: 50000
+
+    securityContext:
+      allowPrivilegeEscalation: false
+      # AUSNAHME: readOnlyRootFilesystem deaktiviert, da Airflow Webserver
+      # Flask-Sessions und Jinja2-Template-Caches in /tmp schreibt.
+      # Mitigiert durch: emptyDir für /tmp, restriktive NetworkPolicy.
+      readOnlyRootFilesystem: false
+      runAsNonRoot: true
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2000m"
+        memory: "2Gi"
+
+  scheduler:
+    enabled: true
+
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 50000
+      runAsGroup: 50000
+      fsGroupChangePolicy: OnRootMismatch
+      fsGroup: 50000
+
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+
+    # Log-Cleaner: optional, aber empfohlen für Remote-Logging
+    logGroomerSidecar:
+      enabled: true
+
+  # ============================================================
+  # Custom Airflow Image (mit dbt + OM-Ingestion)
+  # ============================================================
+  images:
+    airflow:
+      repository: "{{ .Values.global.imageRegistry }}/airflow-dbt"
+      tag: "3.0.2-python3.12"
+      pullPolicy: "{{ .Values.global.imagePullPolicy }}"
+
+  # ============================================================
+  # Datenbankverbindung (PostgreSQL Metastore)
+  # ============================================================
+  data:
+    metadataConnection:
+      type: postgres
+      user: airflow
+      pass: null  # wird aus Secret überschrieben
+      host: "{{ .Release.Name }}-postgresql"
+      port: 5432
+      db: airflow
+      # Secret wird via ExternalSecret erstellt (TICKET-004)
+      existingSecret: airflow-db-credentials
+      existingSecretKey: password
+
+  # ============================================================
+  # Logs → MinIO (S3-Remote-Logging)
+  # ============================================================
+  logs:
+    persistence:
+      enabled: false  # Keine lokalen Logs
+    remote:
+      enabled: true
+      provider: aws  # S3-kompatibel
+      conn_id: aws_default
+      base_log_folder: "s3://airflow-logs/logs"
+      bucket_name: airflow-logs
+      # endpoint_url wird via Environment-Variable gesetzt
+      # → verweist auf MinIO: http://{{ .Release.Name }}-minio:9000
+
+  # ============================================================
+  # KubernetesExecutor Pod-Template
+  # ============================================================
+  # Diese Config wird für jeden Worker-Pod verwendet,
+  # den der Scheduler spawnt.
+  workers:
+    podTemplate:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        namespace: "{{ .Release.Namespace }}"
+      spec:
+        restartPolicy: Never
+        serviceAccountName: "{{ .Release.Name }}-airflow-worker"
+
+        # Pod Security Context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 50000
+          runAsGroup: 50000
+          fsGroupChangePolicy: OnRootMismatch
+          fsGroup: 50000
+
+        containers:
+          - name: base
+            image: "{{ .Values.global.imageRegistry }}/airflow-dbt:3.0.2-python3.12"
+            imagePullPolicy: "{{ .Values.global.imagePullPolicy }}"
+
+            # Container Security Context
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              capabilities:
+                drop: [ALL]
+              seccompProfile:
+                type: RuntimeDefault
+
+            # Environment-Variablen
+            env:
+              # Airflow Secrets
+              - name: AIRFLOW__CORE__FERNET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: airflow-credentials
+                    key: fernet-key
+
+              # MinIO Credentials (für S3Hook)
+              - name: AIRFLOW__CORE__REMOTE_LOGGING_LOG_ID_TEMPLATE
+                value: "{{ ti.dag_id }}/{{ ti.task_id }}/{{ ti.execution_date.isoformat() }}"
+              - name: AWS_ACCESS_KEY_ID
+                valueFrom:
+                  secretKeyRef:
+                    name: airflow-minio-credentials
+                    key: access-key
+              - name: AWS_SECRET_ACCESS_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: airflow-minio-credentials
+                    key: secret-key
+              - name: AWS_S3_ENDPOINT_URL
+                value: "http://{{ .Release.Name }}-minio:9000"
+
+              # dbt Profiles
+              - name: DBT_PROFILES_DIR
+                value: /home/airflow/.dbt
+
+            resources:
+              requests:
+                cpu: "250m"
+                memory: "512Mi"
+              limits:
+                cpu: "1000m"
+                memory: "2Gi"
+
+            volumeMounts:
+              # Temp-Verzeichnis für Worker
+              - name: tmp
+                mountPath: /tmp
+              # dbt Profiles (Secret-Mount)
+              - name: dbt-profiles
+                mountPath: /home/airflow/.dbt
+                readOnly: true
+
+        volumes:
+          - name: tmp
+            emptyDir: {}
+          - name: dbt-profiles
+            secret:
+              secretName: dbt-profiles
+              defaultMode: 0644
+
+  # ============================================================
+  # Webserver Config (Python-Code)
+  # ============================================================
+  # webserverConfig wird als ConfigMap geschrieben und
+  # in die Airflow-Installation injiziert.
+  webserverConfig: |
+    from airflow.www.security import AirflowSecurityManager
+    from flask_appbuilder.security.manager import AUTH_OAUTH
+
+    # ============================================================
+    # OIDC / Keycloak Authentication
+    # ============================================================
+    AUTH_TYPE = AUTH_OAUTH
+    AUTH_USER_REGISTRATION = True
+    AUTH_USER_REGISTRATION_ROLE = "Viewer"
+
+    OAUTH_PROVIDERS = [
+      {
+        "name": "keycloak",
+        "icon": "fa-key",
+        "token_key": "access_token",
+        "remote_app": {
+          "client_id": "airflow",
+          "client_secret": "{{ KEYCLOAK_CLIENT_SECRET }}",  # wird aus Secret injiziert
+          "server_metadata_url": "http://{{ .Release.Name }}-keycloak:8080/realms/data-platform/.well-known/openid-configuration",
+          "api_base_url": "http://{{ .Release.Name }}-keycloak:8080/realms/data-platform/protocol/openid-connect",
+          "request_token_params": {
+            "scope": "openid email profile"
+          },
+        }
+      }
+    ]
+
+  # ============================================================
+  # Secrets (via ExternalSecret befüllt)
+  # ============================================================
+  extraSecrets:
+    airflow-credentials:
+      stringData: {}  # ESO befüllt dieses Secret
+    airflow-db-credentials:
+      stringData: {}
+    airflow-minio-credentials:
+      stringData: {}
+    airflow-oidc-credentials:
+      stringData: {}
+
+  # ============================================================
+  # Umgebungsvariablen
+  # ============================================================
+  env:
+    # Fernet Key aus Secret
+    - name: AIRFLOW__CORE__FERNET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: airflow-credentials
+          key: fernet-key
+
+    # Webserver Secret Key
+    - name: AIRFLOW__WEBSERVER__SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: airflow-credentials
+          key: webserver-secret-key
+
+    # KubernetesExecutor: Namespace für Worker-Pods
+    - name: AIRFLOW__KUBERNETES__NAMESPACE
+      value: "{{ .Release.Namespace }}"
+
+    # S3 Remote Logging für MinIO
+    - name: AIRFLOW__LOGGING__REMOTE_LOGGING
+      value: "True"
+    - name: AIRFLOW__LOGGING__LOGGING_CONFIG_CLASS
+      value: "airflow.providers.amazon.aws.log_handler.S3TaskHandler"
+    - name: AIRFLOW__LOGGING__LOG_FORMAT
+      value: "[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s"
+
+    # MinIO Endpoint für S3
+    - name: AWS_S3_ENDPOINT_URL
+      value: "http://{{ .Release.Name }}-minio:9000"
+
+  # ============================================================
+  # Ingress (Webserver UI)
+  # ============================================================
+  # wird via separates Ingress-Template konfiguriert (noch nicht in diesem Ticket)
+
+  # ============================================================
+  # Postgresql Backup & Maintenance
+  # ============================================================
+  postgresql:
+    enabled: false  # Wir verwenden das separate PostgreSQL-Subchart (TICKET-002)

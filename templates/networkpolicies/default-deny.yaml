@@ -1,0 +1,48 @@
+{{- if .Values.networkPolicies.enabled }}
+# Default-Deny NetworkPolicy – Baseline für alle Namespaces
+# Blockiert DEFAULT ALLEN Netzwerk-Datenverkehr (Ingress + Egress).
+# Alle anderen Komponenten müssen explizit Allow-Rules via eigene NetworkPolicies definieren.
+#
+# Diese Policies folgen dem Principle of Least Privilege:
+# - Ingress: Nur explizit erlaubte Datenverkehr wird durchgelassen
+# - Egress: Nur DNS (53/UDP+TCP) ist erlaubt; alle anderen Verbindungen müssen
+#   per spezifische Komponenten-NetworkPolicy freigegeben werden
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "data-platform.fullname" . }}-default-deny-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: network-policies
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress: []
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "data-platform.fullname" . }}-default-deny-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: network-policies
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS (53/UDP und 53/TCP) – für Service Discovery notwendig
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

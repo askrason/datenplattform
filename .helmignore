@@ -1,0 +1,47 @@
+# Helm Ignore – Dateien und Verzeichnisse, die nicht in das Chart gepackt werden
+
+# Versionskontrolle
+.git
+.gitignore
+.gitattributes
+
+# IDE & Editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+.env
+.env.local
+
+# Dokumentation & Guides (nicht ins Chart)
+*.md
+README*
+CHANGELOG*
+LICENSE
+docs/
+docs/**/*
+
+# Scripts für Entwicklung
+scripts/
+ci/
+
+# Tests & Validierung
+tests/
+test/**/*
+*.test.yaml
+*.spec.yaml
+
+# Temporäre Dateien
+*.tmp
+*.bak
+*.swp
+*~
+
+# Chart Lock (wird neu generiert)
+Chart.lock
+
+# Eigene Dateien (optional)
+.envrc
+*.local.yaml

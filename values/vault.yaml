@@ -1,0 +1,101 @@
+# ============================================================
+# VAULT – Secrets Management (TICKET-004)
+# ============================================================
+# HashiCorp Vault als zentrale Secret-Verwaltung für alle
+# Komponenten. Wird im HA-Modus mit 3 Replicas und Raft-Storage
+# deployed.
+#
+# WICHTIG: Nach dem ersten Deployment muss Vault manuell
+# initialisiert werden (vault operator init, unseal).
+# Siehe: docs/vault-setup.md
+#
+# ADR-003: Vault + ESO bilden die Basis für sichere Secret-Verwaltung.
+# Kein Klartext in values.yaml – alle Apps referenzieren existingSecret.
+
+vault:
+  enabled: true
+
+  # ============================================================
+  # Server-Konfiguration
+  # ============================================================
+  server:
+    # --- HA-Mode: 3 Replicas mit Raft-Storage ---
+    ha:
+      enabled: true
+      replicas: 3
+      raft:
+        enabled: true
+        config: |
+          ui = true
+
+          listener "tcp" {
+            address       = "[::]:8200"
+            tls_disable   = 1
+            cluster_address = "[::]:8201"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+          service_registration "kubernetes" {}
+
+    # --- Pod & Container Security ---
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 100
+      fsGroupChangePolicy: OnRootMismatch
+      fsGroup: 1000
+
+    securityContext:
+      allowPrivilegeEscalation: false
+      # AUSNAHME: readOnlyRootFilesystem deaktiviert, da Vault
+      # Raft-Daten unter /vault/data und Audit-Logs schreibt.
+      readOnlyRootFilesystem: false
+      runAsNonRoot: true
+      capabilities:
+        # IPC_LOCK: Vault nutzt mlock() um Secrets im RAM zu halten
+        # und nicht in Swap zu gehen. Dies ist für Sicherheit essentiell.
+        add: [IPC_LOCK]
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+
+    # --- Ressourcen ---
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+
+    # --- Persistenter Storage für Raft-Daten ---
+    dataStorage:
+      enabled: true
+      size: 10Gi
+      storageClass: "{{ .Values.global.storageClass }}"
+      # Bei Pod-Löschung Daten behalten (Raft-Konsens!)
+      persistentVolumeClaimRetentionPolicy:
+        whenDeleted: Retain
+
+    # --- Audit Logging ---
+    audit:
+      file:
+        enabled: true
+
+  # ============================================================
+  # Vault UI
+  # ============================================================
+  ui:
+    enabled: true
+    # Die UI wird via Ingress exponiert (siehe Ingress-Template)
+
+  # ============================================================
+  # Vault Agent Injector
+  # ============================================================
+  injector:
+    # Wir nutzen External Secrets Operator statt des Vault Injectors,
+    # weil ESO ein standardisiertes K8s-Pattern ist und besser
+    # zur GitOps-Philosophie passt.
+    enabled: false

@@ -1,0 +1,188 @@
+# ============================================================
+# MINIO (TICKET-003) – S3-kompatibler Object Store
+# ============================================================
+# MinIO wird im Distributed-Modus mit 4 Replicas deployed.
+# Die Konfiguration ermöglicht einen späteren Wechsel zu alternativen
+# S3-kompatiblen Stores (Ceph, Garage, Cloudflare R2) ohne Code-Änderungen
+# an Consumers (Airflow, Trino, dbt, OpenMetadata).
+#
+# WICHTIG: Alle Consumers verwenden standardisierte S3 SDK mit
+# endpoint_url Override – KEIN proprietäres MinIO SDK!
+
+minio:
+  enabled: true
+
+  # ============================================================
+  # Deployment-Modus
+  # ============================================================
+  # distributed: Mehrere Pods mit Erasure Coding
+  # minimum 4 Pods für Erasure Coding (Datenintegrität)
+  mode: distributed
+  replicas: 4
+
+  # ============================================================
+  # Pod & Container Security
+  # ============================================================
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+    fsGroup: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    # readOnlyRootFilesystem: true – MinIO schreibt alle Daten
+    # auf das gemountete PVC (/data), nicht ins Container-Filesystem.
+    # Dies ist möglich, weil das PVC als rw gemountet wird.
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+  # ============================================================
+  # Ressourcen
+  # ============================================================
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+  # ============================================================
+  # Persistenter Storage
+  # ============================================================
+  persistence:
+    enabled: true
+    storageClass: "{{ .Values.global.storageClass }}"
+    size: 500Gi
+
+  # ============================================================
+  # Buckets (automatisch erstellt)
+  # ============================================================
+  buckets:
+    - name: airflow-logs
+      policy: public
+      purge: false
+    - name: airflow-dags
+      policy: public
+      purge: false
+    - name: dbt-artifacts
+      policy: public
+      purge: false
+    - name: trino-spill
+      policy: public
+      purge: false
+    - name: data-raw
+      policy: public
+      purge: false
+    - name: data-processed
+      policy: public
+      purge: false
+    - name: openmetadata-assets
+      policy: public
+      purge: false
+
+  # ============================================================
+  # IAM Policies (MinIO Bucket Policies)
+  # ============================================================
+  policies:
+    - name: airflow-policy
+      statements:
+        - effect: Allow
+          actions:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+          resources:
+            - arn:aws:s3:::airflow-logs/*
+            - arn:aws:s3:::airflow-dags/*
+            - arn:aws:s3:::dbt-artifacts/*
+        - effect: Allow
+          actions:
+            - s3:ListBucket
+          resources:
+            - arn:aws:s3:::airflow-logs
+            - arn:aws:s3:::airflow-dags
+            - arn:aws:s3:::dbt-artifacts
+
+    - name: trino-policy
+      statements:
+        - effect: Allow
+          actions:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+          resources:
+            - arn:aws:s3:::data-raw/*
+            - arn:aws:s3:::data-processed/*
+            - arn:aws:s3:::trino-spill/*
+        - effect: Allow
+          actions:
+            - s3:ListBucket
+          resources:
+            - arn:aws:s3:::data-raw
+            - arn:aws:s3:::data-processed
+            - arn:aws:s3:::trino-spill
+
+    - name: openmetadata-policy
+      statements:
+        - effect: Allow
+          actions:
+            - s3:GetObject
+            - s3:ListBucket
+          resources:
+            - arn:aws:s3:::*/*
+            - arn:aws:s3:::*
+
+  # ============================================================
+  # IAM Users (Service Accounts)
+  # ============================================================
+  users:
+    - accessKey: airflow-svc
+      secretKey: airflow-secret-key  # wird aus ExternalSecret injiziert
+      policy: airflow-policy
+
+    - accessKey: trino-svc
+      secretKey: trino-secret-key    # wird aus ExternalSecret injiziert
+      policy: trino-policy
+
+    - accessKey: openmetadata-svc
+      secretKey: openmetadata-secret-key  # wird aus ExternalSecret injiziert
+      policy: openmetadata-policy
+
+  # ============================================================
+  # MinIO Console (Web UI)
+  # ============================================================
+  console:
+    enabled: true
+
+  # ============================================================
+  # Metrics (Prometheus)
+  # ============================================================
+  metrics:
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+
+  # ============================================================
+  # TLS/SSL
+  # ============================================================
+  # TLS-Terminierung erfolgt am Ingress Controller.
+  # MinIO selbst läuft unverschlüsselt (interne Kommunikation,
+  # Ingress-TLS-Terminierung sorgt für Transport-Security).
+  tls:
+    enabled: false
+
+  # ============================================================
+  # Root-Credentials
+  # ============================================================
+  # WICHTIG: Root-Credentials werden aus einem existierenden Secret
+  # gelesen (erstellt via ExternalSecret in TICKET-004/Vault).
+  # Kein Klartext in values.yaml!
+  rootUser: minioadmin
+  rootPassword: null  # wird aus Secret überschrieben

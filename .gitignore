@@ -1,0 +1,28 @@
+﻿# Lokale Secrets und Config
+.env
+.env.local
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Helm Lock (wird neu generiert)
+Chart.lock
+
+# Temp-Dateien
+*.tmp
+*.bak
+
+# Vault/Secrets (NIEMALS committen!)
+vault-init.json
+unseal-keys.txt
+root-token.txt
+
+# Node/npm (falls später frontend)
+node_modules/
+dist/

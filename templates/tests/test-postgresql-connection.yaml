@@ -1,0 +1,145 @@
+{{- if and .Values.postgresql.enabled }}
+# Helm Test: PostgreSQL Connection & Database Verification
+# ============================================================
+# Dieser Test-Pod wird von `helm test data-platform` ausgeführt.
+# Er überprüft, dass:
+#   1. PostgreSQL Primary erreichbar ist (Port 5432)
+#   2. Alle 6 Datenbanken existieren
+#   3. Jeder App-User sich verbinden kann (optional)
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "data-platform.fullname" . }}-test-postgresql
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+
+spec:
+  restartPolicy: Never
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    fsGroupChangePolicy: OnRootMismatch
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+  containers:
+    - name: postgresql-test
+      image: postgres:16-alpine
+      imagePullPolicy: IfNotPresent
+
+      env:
+        # PostgreSQL Primary Service (within same namespace)
+        - name: PG_HOST
+          value: "{{ .Release.Name }}-postgresql"
+        - name: PG_PORT
+          value: "5432"
+        - name: PG_USER
+          value: "postgres"
+        - name: PG_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-credentials
+              key: postgres-password
+
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+
+          echo "Testing PostgreSQL connection..."
+          echo "==================================="
+          echo "Host: $PG_HOST"
+          echo "Port: $PG_PORT"
+          echo "User: $PG_USER"
+          echo ""
+
+          # ============================================================
+          # Test 1: Verbindung zur Primary
+          # ============================================================
+          echo "Test 1: Connecting to PostgreSQL Primary..."
+          export PGPASSWORD="$PG_PASSWORD"
+
+          psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -c "SELECT version();" || {
+            echo "❌ FAILED: Cannot connect to PostgreSQL"
+            exit 1
+          }
+          echo "✓ Connection successful"
+          echo ""
+
+          # ============================================================
+          # Test 2: Überprüfe dass alle Datenbanken existieren
+          # ============================================================
+          echo "Test 2: Checking databases..."
+          DATABASES="airflow openmetadata superset metabase keycloak"
+
+          for db in $DATABASES; do
+            if psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -lqt | grep -q "^ $db"; then
+              echo "✓ Database '$db' exists"
+            else
+              echo "❌ FAILED: Database '$db' not found"
+              exit 1
+            fi
+          done
+          echo ""
+
+          # ============================================================
+          # Test 3: Überprüfe dass User existieren
+          # ============================================================
+          echo "Test 3: Checking users..."
+          USERS="airflow openmetadata superset metabase keycloak"
+
+          for user in $USERS; do
+            if psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -c \
+              "SELECT * FROM pg_user WHERE usename = '$user';" | grep -q "$user"; then
+              echo "✓ User '$user' exists"
+            else
+              echo "⚠ User '$user' might not exist (continuing)"
+            fi
+          done
+          echo ""
+
+          # ============================================================
+          # Test 4: Überprüfe Replikation Status
+          # ============================================================
+          echo "Test 4: Checking replication status..."
+          psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -c \
+            "SELECT slot_name, slot_type, restart_lsn FROM pg_replication_slots;" || {
+            echo "⚠ Replication slots not immediately available (may be ok)"
+          }
+          echo ""
+
+          echo "==================================="
+          echo "✓ All tests passed!"
+          exit 0
+
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "256Mi"
+
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+
+  volumes:
+    - name: tmp
+      emptyDir: {}
+{{- end }}

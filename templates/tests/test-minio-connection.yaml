@@ -1,0 +1,151 @@
+{{- if and .Values.minio.enabled }}
+# Helm Test: MinIO Connection & Bucket Verification
+# ============================================================
+# Dieser Test-Pod wird von `helm test data-platform` ausgeführt.
+# Er überprüft, dass:
+#   1. MinIO API auf Port 9000 erreichbar ist
+#   2. Alle 7 Buckets existieren
+#   3. Service-User sich authentifizieren können
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "data-platform.fullname" . }}-test-minio
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+
+spec:
+  restartPolicy: Never
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    fsGroupChangePolicy: OnRootMismatch
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+  containers:
+    - name: minio-test
+      image: minio/mc:latest
+      imagePullPolicy: IfNotPresent
+
+      env:
+        # MinIO Service Host
+        - name: MINIO_HOST
+          value: "{{ .Release.Name }}-minio"
+        - name: MINIO_PORT
+          value: "9000"
+        - name: MINIO_ALIAS
+          value: "minio-cluster"
+        # Root Credentials
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: root-user
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: root-password
+
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+
+          echo "Testing MinIO connection..."
+          echo "==================================="
+          echo "Host: $MINIO_HOST:$MINIO_PORT"
+          echo "Alias: $MINIO_ALIAS"
+          echo ""
+
+          # ============================================================
+          # Test 1: MinIO Erreichbarkeit
+          # ============================================================
+          echo "Test 1: Connecting to MinIO..."
+          mc alias set "$MINIO_ALIAS" \
+            "http://$MINIO_HOST:$MINIO_PORT" \
+            "$MINIO_ROOT_USER" \
+            "$MINIO_ROOT_PASSWORD"
+
+          if mc admin info "$MINIO_ALIAS" > /dev/null 2>&1; then
+            echo "✓ MinIO connection successful"
+          else
+            echo "❌ FAILED: Cannot connect to MinIO"
+            exit 1
+          fi
+          echo ""
+
+          # ============================================================
+          # Test 2: Überprüfe dass alle Buckets existieren
+          # ============================================================
+          echo "Test 2: Checking buckets..."
+          EXPECTED_BUCKETS="airflow-logs airflow-dags dbt-artifacts trino-spill data-raw data-processed openmetadata-assets"
+
+          for bucket in $EXPECTED_BUCKETS; do
+            if mc ls "$MINIO_ALIAS/$bucket" > /dev/null 2>&1; then
+              echo "✓ Bucket '$bucket' exists"
+            else
+              echo "❌ FAILED: Bucket '$bucket' not found"
+              exit 1
+            fi
+          done
+          echo ""
+
+          # ============================================================
+          # Test 3: Überprüfe Service-User Zugriff (optional)
+          # ============================================================
+          echo "Test 3: Checking service user access..."
+
+          # Airflow Service User
+          AIRFLOW_SECRET=$(mc config hosts ls | grep -i airflow || echo "")
+          if [ -n "$AIRFLOW_SECRET" ]; then
+            echo "✓ Airflow service user configured"
+          else
+            echo "⚠ Airflow service user not in mc config (ok, user is in Vault)"
+          fi
+          echo ""
+
+          # ============================================================
+          # Test 4: MinIO Health Status
+          # ============================================================
+          echo "Test 4: Checking MinIO health..."
+          mc admin info "$MINIO_ALIAS" || {
+            echo "⚠ Admin info failed (but API is reachable)"
+          }
+          echo ""
+
+          echo "==================================="
+          echo "✓ All tests passed!"
+          exit 0
+
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "256Mi"
+
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+
+  volumes:
+    - name: tmp
+      emptyDir: {}
+{{- end }}

@@ -1,0 +1,127 @@
+{{- if and .Values.airflow.enabled .Values.networkPolicies.enabled }}
+# NetworkPolicy: Airflow
+# ============================================================
+# Airflow hat komplexe Netzwerk-Anforderungen:
+#   - Webserver: Ingress von außen (Port 8080)
+#   - Scheduler: Egress zu PostgreSQL, MinIO, K8s API, Keycloak
+#   - Worker: Egress zu PostgreSQL, MinIO, Trino, OpenMetadata
+#
+# Diese Policy deckt sowohl Scheduler als auch Worker ab.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "data-platform.fullname" . }}-airflow-netpol
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: airflow
+
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: airflow
+      app.kubernetes.io/instance: {{ .Release.Name }}
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # ============================================================
+  # Ingress: Wer darf zu Airflow verbinden?
+  # ============================================================
+  ingress:
+    # --- Port 8080: Webserver UI ---
+    # Von Ingress Controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx  # ANPASSEN: Namespace des Ingress Controllers
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # --- Port 8080: OpenMetadata REST API ---
+    # OpenMetadata crawled Airflow DAGs über REST API
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openmetadata
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8080
+
+  # ============================================================
+  # Egress: Wohin darf Airflow verbinden?
+  # ============================================================
+  egress:
+    # --- PostgreSQL (Metastore) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # --- MinIO (S3-API für Logs + DAG-Artefakte) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 9000
+
+    # --- Trino (dbt-trino Adapter) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trino
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # --- OpenMetadata (Metadaten-Push via openmetadata-ingestion) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openmetadata
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8585
+
+    # --- Keycloak (OIDC Token Validation) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8443
+
+    # --- Kubernetes API Server (KubernetesExecutor spawnt Pods) ---
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # --- DNS ---
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+{{- end }}

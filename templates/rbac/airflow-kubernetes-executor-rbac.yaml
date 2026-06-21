@@ -1,0 +1,79 @@
+{{- if .Values.airflow.enabled }}
+# RBAC für Airflow KubernetesExecutor
+# ============================================================
+# Der Airflow Scheduler muss die Erlaubnis haben, Worker-Pods
+# zu erstellen, zu löschen und zu patchen (KubernetesExecutor).
+#
+# Dies ist eine Namespace-scoped Role (NICHT ClusterRole),
+# weil Worker-Pods nur im Airflow-Namespace spawnen.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-airflow-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: airflow
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-airflow-kubernetes-executor
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: airflow
+
+rules:
+  # ============================================================
+  # Pod Management (für Worker-Spawning)
+  # ============================================================
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch"]
+
+  # ============================================================
+  # Pod Logs (für Debugging + Airflow UI)
+  # ============================================================
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+
+  # ============================================================
+  # Pod Exec (optional, für debugging)
+  # ============================================================
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+
+  # ============================================================
+  # Secrets (für dbt-profiles + Credentials)
+  # ============================================================
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-airflow-kubernetes-executor
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: airflow
+
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-airflow-kubernetes-executor
+
+subjects:
+  - kind: ServiceAccount
+    name: "{{ .Release.Name }}-airflow-scheduler"
+    namespace: {{ .Release.Namespace }}
+
+{{- end }}

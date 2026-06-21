@@ -1,0 +1,244 @@
+# ============================================================
+# GLOBALE WERTE (automatisch an alle Sub-Charts vererbt)
+# ============================================================
+# Helm reicht alles unter `global:` automatisch an jedes Sub-Chart als
+# `.Values.global.*` weiter. Das ist der Mechanismus, über den z.B.
+# `global.domain` und `global.storageClass` in den Komponenten-Values
+# (values/*.yaml, siehe TICKET-002 ff.) referenziert werden.
+#
+# WICHTIG: values.yaml selbst wird NICHT durch die Helm-Template-Engine
+# gerendert (nur templates/*.yaml werden gerendert). Platzhalter wie
+# "{{ .Values.global.domain }}" funktionieren deshalb nur in Feldern, die
+# der jeweilige Sub-Chart per `tpl` selbst nachrendert (z.B. Bitnami- und
+# Trino-Charts tun das für ingress.hostname, extraEnvVars etc.). Wo das
+# NICHT unterstützt wird, muss der Wert stattdessen direkt gesetzt oder
+# per `--set` / eigenem Template injiziert werden. Bitte pro Sub-Chart
+# in dessen README prüfen, bevor TICKET-002 ff. umgesetzt wird.
+global:
+  domain: "data-platform.example.com"   # ANPASSEN
+  storageClass: "fast-ssd"              # ANPASSEN
+  imageRegistry: "your-registry"        # ANPASSEN
+  imagePullPolicy: "IfNotPresent"
+  imagePullSecrets: []
+  namespaceSuffix: ""                   # z.B. "-prod" / "-staging"
+
+# ============================================================
+# NETZWERK-POLICIES (Umbrella-Level)
+# ============================================================
+# Globales Flag zum Aktivieren/Deaktivieren aller NetworkPolicies.
+# Setzt den "Deny by Default"-Baseline sowie komponenten-spezifische Policies.
+# EMPFEHLUNG: In Production immer enabled: true
+networkPolicies:
+  enabled: true
+
+# ============================================================
+# GLOBALE SECURITY-DEFAULTS (BundesMessenger-Pattern)
+# ============================================================
+x-security-context: &defaultSecurityContext
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  capabilities:
+    drop: [ALL]
+  seccompProfile:
+    type: RuntimeDefault
+
+x-pod-security: &defaultPodSecurityContext
+  runAsNonRoot: true
+  fsGroupChangePolicy: OnRootMismatch
+
+# ============================================================
+# VAULT (TICKET-004) – volle Konfiguration in values/vault.yaml
+# ============================================================
+vault:
+  enabled: true
+  # Details: values/vault.yaml (HA-Mode, Raft, IPC_LOCK-Capability etc.)
+
+# ============================================================
+# EXTERNAL SECRETS OPERATOR (TICKET-004)
+# ============================================================
+external-secrets:
+  enabled: true
+  # Details: values/external-secrets.yaml (ClusterSecretStore -> Vault)
+
+# ============================================================
+# MINIO
+# ============================================================
+minio:
+  enabled: true
+  mode: distributed
+  replicas: 4
+  podSecurityContext:
+    <<: *defaultPodSecurityContext
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  securityContext:
+    <<: *defaultSecurityContext
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: 2000m, memory: 4Gi }
+  persistence:
+    enabled: true
+    storageClass: "fast-ssd"   # MUSS synchron zu global.storageClass bleiben
+    size: 500Gi
+  # S3-Kompatibilität für späteren Wechsel (z.B. zu Ceph/Garage)
+  # API-Endpoint bleibt gleich → Airflow/Trino/dbt müssen nicht angepasst werden
+
+# ============================================================
+# APACHE AIRFLOW
+# ============================================================
+airflow:
+  enabled: true
+  executor: KubernetesExecutor   # bevorzugt: kein dauerhafter Worker-Pool
+  podSecurityContext:
+    <<: *defaultPodSecurityContext
+    runAsUser: 50000
+    runAsGroup: 50000
+    fsGroup: 50000
+  securityContext:
+    <<: *defaultSecurityContext
+  webserver:
+    securityContext:
+      <<: *defaultSecurityContext
+      readOnlyRootFilesystem: false   # Webserver schreibt Sessions
+  scheduler:
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits:   { cpu: 2000m, memory: 4Gi }
+  # dbt läuft als eigenes Airflow-Image (Custom Image)
+  images:
+    airflow:
+      repository: your-registry/airflow-dbt
+      tag: "3.0-python3.12"
+      # Enthält: apache-airflow + dbt-core + dbt-trino + dbt-postgres
+  extraPipPackages:
+    - "dbt-core>=1.9"
+    - "dbt-trino>=1.9"
+    - "dbt-postgres>=1.9"
+    - "openmetadata-ingestion>=1.13"
+
+# ============================================================
+# POSTGRESQL
+# ============================================================
+postgresql:
+  enabled: true
+  architecture: replication
+  primary:
+    podSecurityContext:
+      <<: *defaultPodSecurityContext
+      runAsUser: 1001
+      fsGroup: 1001
+    containerSecurityContext:
+      <<: *defaultSecurityContext
+      readOnlyRootFilesystem: false   # PG schreibt WAL
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits:   { cpu: 4000m, memory: 8Gi }
+  auth:
+    existingSecret: postgresql-credentials   # via ExternalSecrets
+  # Separate Datenbanken für jede Komponente
+  # KORREKTUR: "keycloak" fehlte hier ursprünglich, wird aber von
+  # TICKET-010 (externalDatabase.database: keycloak) zwingend benötigt.
+  initdbScripts:
+    init.sql: |
+      CREATE DATABASE airflow;
+      CREATE DATABASE openmetadata;
+      CREATE DATABASE metabase;
+      CREATE DATABASE superset;
+      CREATE DATABASE keycloak;
+      -- Vollständige Anlage von Usern + GRANTs (least privilege,
+      -- ein User pro DB, kein SUPERUSER) erfolgt im Rahmen von TICKET-002.
+
+# ============================================================
+# TRINO
+# ============================================================
+trino:
+  enabled: true
+  server:
+    workers: 3
+  coordinator:
+    podSecurityContext:
+      <<: *defaultPodSecurityContext
+      runAsUser: 1000
+    securityContext:
+      <<: *defaultSecurityContext
+    resources:
+      requests: { cpu: 1000m, memory: 2Gi }
+      limits:   { cpu: 4000m, memory: 8Gi }
+  worker:
+    podSecurityContext:
+      <<: *defaultPodSecurityContext
+      runAsUser: 1000
+    securityContext:
+      <<: *defaultSecurityContext
+    resources:
+      requests: { cpu: 2000m, memory: 4Gi }
+      limits:   { cpu: 8000m, memory: 16Gi }
+  catalogs:
+    minio.properties: |
+      connector.name=hive
+      hive.metastore=file
+      hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
+      hive.s3.aws-credentials-provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
+      hive.s3.path-style-access=true
+    postgresql.properties: |
+      connector.name=postgresql
+      connection-url=jdbc:postgresql://postgresql:5432/
+      connection-user=${ENV:TRINO_PG_USER}
+      connection-password=${ENV:TRINO_PG_PASSWORD}
+    # KORREKTUR: ursprünglich stand hier
+    #   "hive.s3.endpoint=[minio](http://minio:9000)"
+    # – ein Markdown-Link-Artefakt statt einer gültigen Properties-Zeile.
+    # Korrigiert auf einen echten Service-Endpoint (Release-Name-Prefix,
+    # analog zu TICKET-006).
+
+# ============================================================
+# KEYCLOAK (TICKET-010) – volle Konfiguration in values/keycloak.yaml
+# ============================================================
+keycloak:
+  enabled: true
+  # Details: values/keycloak.yaml (Realm-Import, externalDatabase: keycloak,
+  # 2 Replicas + Infinispan-Cache, Bitnami-OCI-Hinweis s. Chart.yaml)
+
+# ============================================================
+# OPENMETADATA
+# ============================================================
+openmetadata:
+  enabled: true
+  podSecurityContext:
+    <<: *defaultPodSecurityContext
+    runAsUser: 1000
+  securityContext:
+    <<: *defaultSecurityContext
+    readOnlyRootFilesystem: false
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: 2000m, memory: 4Gi }
+  config:
+    database:
+      existingSecret: openmetadata-db-secret
+
+# ============================================================
+# APACHE SUPERSET  (bevorzugt gegenüber Metabase für OSS)
+# ============================================================
+superset:
+  enabled: true
+  podSecurityContext:
+    <<: *defaultPodSecurityContext
+    runAsUser: 1000
+  securityContext:
+    <<: *defaultSecurityContext
+    readOnlyRootFilesystem: false
+  extraEnvVarsSecret: superset-credentials
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: 2000m, memory: 4Gi }
+
+# ============================================================
+# METABASE (TICKET-009, optional) – volle Konfiguration in values/metabase.yaml
+# ============================================================
+metabase:
+  enabled: true
+  # Details: values/metabase.yaml (+ oauth2-proxy-Sidecar für Keycloak-SSO,
+  # da Metabase OSS kein natives OIDC unterstützt, s. ADR-004)

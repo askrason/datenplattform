@@ -1,0 +1,109 @@
+{{- if and .Values.minio.enabled .Values.networkPolicies.enabled }}
+# NetworkPolicy: MinIO
+# ============================================================
+# MinIO läuft im Distributed-Modus und wird über zwei Ports
+# exponiert:
+#   - Port 9000: S3-API (von Airflow, Trino, OpenMetadata)
+#   - Port 9001: Console/Web-UI (von Ingress Controller)
+#
+# Zugriff ist auf diese Quellen eingeschränkt.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "data-platform.fullname" . }}-minio-netpol
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: minio
+
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+      app.kubernetes.io/instance: {{ .Release.Name }}
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # ============================================================
+  # Ingress: Wer darf zu MinIO verbinden?
+  # ============================================================
+  ingress:
+    # --- Port 9000: S3 API ---
+    # Airflow (Logs, DAGs, dbt Artifacts)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: airflow
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 9000
+
+    # Trino (Coordinator + Worker für S3 Catalog)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trino
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 9000
+
+    # OpenMetadata (Metadaten-Crawling)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openmetadata
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 9000
+
+    # --- Port 9001: MinIO Console ---
+    # Von Ingress Controller Namespace (Web-UI via Ingress)
+    # Falls Ingress im eigenen Namespace: explizite Allow-Rule
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx  # ANPASSEN: der eigentliche Namespace des Ingress Controllers
+      ports:
+        - protocol: TCP
+          port: 9001
+
+    # --- Inter-Pod Communication (Distributed Mode) ---
+    # MinIO Pods kommunizieren untereinander auf Port 9000
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 9000
+
+  # ============================================================
+  # Egress: Wohin darf MinIO verbinden?
+  # ============================================================
+  egress:
+    # DNS (Service Discovery)
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Inter-Pod Communication (MinIO Cluster)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 9000
+{{- end }}

@@ -1,0 +1,44 @@
+{{- if and .Values.vault.enabled .Values.external-secrets.enabled }}
+# RBAC für Vault Kubernetes Authentication
+# ============================================================
+# Vault benötigt die Möglichkeit, K8s ServiceAccount Tokens zu validieren.
+# Dies geschieht über die Kubernetes API-Gruppe "authentication.k8s.io"
+# mit dem Verb "create" auf die Ressource "tokenreviews".
+#
+# Dieses ClusterRoleBinding gestattet es dem ESO ServiceAccount,
+# TokenReview-Objekte zu erstellen (was Vault tut, um Tokens zu validieren).
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "data-platform.fullname" . }}-vault-tokenreview
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: vault
+
+rules:
+  # Vault benötigt diese Permission, um K8s ServiceAccount Tokens zu validieren
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "data-platform.fullname" . }}-vault-tokenreview-binding
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: vault
+
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "data-platform.fullname" . }}-vault-tokenreview
+
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-vault
+    namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,28 @@
+helm-chart/
+├── Chart.yaml               # Umbrella-Chart, alle Deps definiert
+├── Chart.lock
+├── values.yaml              # Globale Defaults + global-Block + Hardening-Anchors
+├── values.schema.yaml       # Validierungsschema
+├── values/
+│   ├── vault.yaml            # TICKET-004
+│   ├── external-secrets.yaml # TICKET-004
+│   ├── postgresql.yaml       # TICKET-002
+│   ├── minio.yaml             # TICKET-003
+│   ├── keycloak.yaml          # TICKET-010
+│   ├── airflow.yaml           # TICKET-005
+│   ├── trino.yaml             # TICKET-006
+│   ├── openmetadata.yaml      # TICKET-007
+│   ├── superset.yaml          # TICKET-008
+│   └── metabase.yaml          # TICKET-009 (optional)
+└── templates/
+    ├── _helpers.tpl          # Gemeinsame Template-Funktionen (TICKET-001)
+    ├── networkpolicies/      # Eigene NPs pro Komponente + default-deny.yaml
+    ├── rbac/
+    ├── externalsecrets/      # ExternalSecret-Templates
+    │                         # KORREKTUR: hieß vorher "secrets/" – alle Tickets
+    │                         # (TICKET-002 ff.) referenzieren konsistent den Pfad
+    │                         # "templates/externalsecrets/*.yaml", daher angepasst.
+    └── tests/                # helm-test-Pods (TICKET-011)
+
+# Hinweis: values/ enthält hier die Reihenfolge, in der die Komponenten
+# laut README.md "Empfohlene Reihenfolge" deployt werden – nicht alphabetisch.

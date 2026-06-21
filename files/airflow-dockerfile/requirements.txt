@@ -1,0 +1,35 @@
+# Custom Python Packages für Airflow 3 + dbt
+
+# ============================================================
+# dbt Core + Adapters
+# ============================================================
+# dbt wird im Airflow-Worker-Image ausgeführt (KubernetesExecutor)
+# nicht als eigenständiger Service (s. ADR-002)
+dbt-core>=1.9.0,<2.0.0
+dbt-trino>=1.9.0
+dbt-postgres>=1.9.0
+
+# ============================================================
+# OpenMetadata Ingestion
+# ============================================================
+# DAGs können Metadaten direkt in OpenMetadata pushen
+# (optional – nur wenn OM-Integration geplant)
+openmetadata-ingestion>=1.13.0
+
+# ============================================================
+# Airflow Providers
+# ============================================================
+# KubernetesExecutor für Pod-Spawning
+apache-airflow-providers-cncf-kubernetes>=10.0.0
+
+# PostgreSQL Connectivity (Airflow Metastore + dbt)
+apache-airflow-providers-postgres>=5.0.0
+
+# Amazon S3 Provider (MinIO nutzt S3-kompatible API)
+apache-airflow-providers-amazon>=8.0.0
+
+# ============================================================
+# Utilities
+# ============================================================
+# Pendulum für Timezone-Handling (optional, aber empfohlen)
+pendulum>=3.0.0

@@ -1,0 +1,166 @@
+# ============================================================
+# POSTGRESQL (TICKET-002) – Shared Metastore für Airflow, OM, Superset, Metabase, Keycloak
+# ============================================================
+# PostgreSQL wird im Replication-Modus deployed (Primary + 1 Read-Replica).
+# Jede Komponente hat eine eigene Datenbank mit eigenem User (least privilege).
+#
+# HINWEIS (CLAUDE.md, Known Issue #6): Bitnami hat sein klassisches
+# Helm-Repository (charts.bitnami.com) im August 2025 zugunsten der OCI-Registry
+# abgelöst. Vor `helm dependency update`: Chart-Version und Image-Tags verifizieren.
+
+postgresql:
+  enabled: true
+
+  # ============================================================
+  # Architektur: Replication (Primary + Read-Replica)
+  # ============================================================
+  architecture: replication
+
+  auth:
+    # Der Root-User (postgres) wird hier angelegt. Das Passwort
+    # wird aus einem existierenden Secret gelesen (via ExternalSecret, TICKET-004).
+    # Kein Klartext in values.yaml!
+    username: postgres
+    existingSecret: "postgresql-credentials"
+    existingSecretPasswordKey: "postgres-password"
+
+  # ============================================================
+  # Primary Pod (Master)
+  # ============================================================
+  primary:
+    # --- Pod Security Context ---
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroupChangePolicy: OnRootMismatch
+      fsGroup: 1001
+
+    # --- Container Security Context ---
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      # AUSNAHME: readOnlyRootFilesystem deaktiviert, da PostgreSQL
+      # Write-Access zu WAL (/var/lib/postgresql/data), pg_wal und
+      # temporäre Dateien benötigt. Mitigiert durch: restriktive
+      # NetworkPolicy (nur Datenbankzugriff auf Port 5432).
+      readOnlyRootFilesystem: false
+      runAsNonRoot: true
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+
+    # --- Ressourcen ---
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "4000m"
+        memory: "8Gi"
+
+    # --- Persistenter Storage ---
+    persistence:
+      enabled: true
+      storageClass: "{{ .Values.global.storageClass }}"
+      size: 50Gi
+
+    # --- Init-Scripts: Datenbanken & User anlegen ---
+    # Wird BEIM ERSTEN Deployment ausgeführt. Nach Init müssen
+    # diese Datenbanken existieren: airflow, openmetadata, superset,
+    # metabase, keycloak (+ default postgres DB).
+    initdbScripts:
+      init.sql: |
+        -- ============================================================
+        -- Datenbanken anlegen (eine pro Komponente)
+        -- ============================================================
+        CREATE DATABASE airflow;
+        CREATE DATABASE openmetadata;
+        CREATE DATABASE superset;
+        CREATE DATABASE metabase;
+        CREATE DATABASE keycloak;
+
+        -- ============================================================
+        -- User anlegen mit Passwörtern aus Secrets
+        -- ============================================================
+        -- HINWEIS: Die Passwörter werden NICHT hier eingegeben (würden in
+        -- den ConfigMap landen). Stattdessen werden die User hier angelegt,
+        -- und die Passwörter werden nach Deployment manuell gesetzt oder
+        -- via PostgreSQL-Operator-Init-Script. Für dieses Setup werden
+        -- die Passwörter als Environment-Variablen (aus ExternalSecret)
+        -- erwartet.
+
+        CREATE ROLE airflow WITH LOGIN;
+        CREATE ROLE openmetadata WITH LOGIN;
+        CREATE ROLE superset WITH LOGIN;
+        CREATE ROLE metabase WITH LOGIN;
+        CREATE ROLE keycloak WITH LOGIN;
+
+        -- ============================================================
+        -- Least Privilege: User haben RECHTE nur auf ihre eigene DB
+        -- ============================================================
+        GRANT ALL PRIVILEGES ON DATABASE airflow TO airflow;
+        GRANT ALL PRIVILEGES ON DATABASE openmetadata TO openmetadata;
+        GRANT ALL PRIVILEGES ON DATABASE superset TO superset;
+        GRANT ALL PRIVILEGES ON DATABASE metabase TO metabase;
+        GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
+
+  # ============================================================
+  # Read-Replica
+  # ============================================================
+  readReplicas:
+    enabled: true
+    replicaCount: 1
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroupChangePolicy: OnRootMismatch
+      fsGroup: 1001
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false  # Gleiche Ausnahme wie Primary
+      runAsNonRoot: true
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+
+    persistence:
+      enabled: true
+      storageClass: "{{ .Values.global.storageClass }}"
+      size: 50Gi
+
+  # ============================================================
+  # Metrics (Prometheus-Exporter)
+  # ============================================================
+  metrics:
+    enabled: true
+    podSecurityContext:
+      runAsNonRoot: true
+      fsGroupChangePolicy: OnRootMismatch
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "128Mi"
