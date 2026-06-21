@@ -1,0 +1,167 @@
+# ============================================================
+# TICKET-007: OpenMetadata Sub-Chart + Airflow-Integration
+# ============================================================
+# OpenMetadata als Data Catalog & Governance Platform.
+# Integriert mit eigenständigem Airflow (TICKET-005, nicht als OM-Dependency).
+# Keycloak-OIDC für SSO, PostgreSQL-Metastore, Elasticsearch für Suche.
+#
+# Chart-Repo: https://helm.open-metadata.org
+# Dokumentation: https://docs.open-metadata.org/
+#
+# WICHTIG (ADR-001): OM-eigenes Airflow wird deaktiviert.
+# Stattdessen REST-API-Connector zu Airflow aus TICKET-005.
+# ============================================================
+
+openmetadata:
+  enabled: true
+
+  # ============================================================
+  # ADR-001: Airflow-Dependency deaktivieren
+  # ============================================================
+  # OpenMetadata Chart deployed standardmäßig eigenes Airflow als Sub-Dependency.
+  # Wir nutzen das eigenständige Airflow aus TICKET-005 stattdessen.
+  airflow:
+    enabled: false
+
+  # ============================================================
+  # Security Context
+  # ============================================================
+  # AUSNAHME: readOnlyRootFilesystem: false
+  # Grund: OM schreibt temporäre Dateien, Logs, Search-Indizes
+  # Mitigiert durch: emptyDir für /tmp, restriktive NetworkPolicy
+
+  podSecurityContext:
+    runAsNonRoot: true
+    fsGroupChangePolicy: OnRootMismatch
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+  # ============================================================
+  # Volumes für temporäre Dateien
+  # ============================================================
+  extraVolumes:
+    - name: tmp
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: tmp
+      mountPath: /tmp
+
+  # ============================================================
+  # Ressourcen
+  # ============================================================
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+  # ============================================================
+  # Datenbankverbindung (PostgreSQL aus TICKET-002)
+  # ============================================================
+  config:
+    database:
+      host: "{{ .Release.Name }}-postgresql"
+      port: 5432
+      driverClass: "org.postgresql.Driver"
+      dbScheme: "postgresql"
+      dbUseSSL: false
+      databaseName: openmetadata
+      # Credentials aus ExternalSecret (s. templates/externalsecrets/)
+      existingSecret: openmetadata-db-credentials
+      existingSecretPasswordKey: password
+
+  # ============================================================
+  # Pipeline Service Client (Airflow REST API)
+  # ============================================================
+  # OM verbindet sich per REST-API zum eigenständigen Airflow (TICKET-005).
+  # Der API-Endpoint zeigt auf die Airflow-Webserver-Service.
+  # Token wird aus Vault injiziert (ExternalSecret).
+  pipelineServiceClientConfig:
+    enabled: true
+    className: "org.openmetadata.service.clients.pipeline.airflow.AirflowRESTClient"
+    # Zeigt auf Airflow aus TICKET-005 (nicht OM-internes Airflow)
+    apiEndpoint: "http://{{ .Release.Name }}-airflow-webserver:8080"
+    # OM metadaten API (wird von Airflow-Ingestion DAGs verwendet, um Metadaten zu pushen)
+    metadataApiEndpoint: "http://{{ .Release.Name }}-openmetadata:8585/api"
+    verifySSL: false
+    # Auth-Token aus Secret
+    secretsManagerCredentials:
+      existingSecret: openmetadata-airflow-credentials
+      existingSecretKey: api-token
+
+  # ============================================================
+  # Keycloak OIDC Authentication
+  # ============================================================
+  # OM nutzt Keycloak als Identity Provider.
+  # TODO (TICKET-010): Keycloak-Konfiguration & Client-Secret in Vault hinterlegen.
+  authentication:
+    provider: "custom-oidc"
+    publicKeyUrls:
+      - "https://{{ .Values.global.domain }}/auth/realms/data-platform/protocol/openid-connect/certs"
+    authority: "https://{{ .Values.global.domain }}/auth/realms/data-platform"
+    clientId: "openmetadata"
+    # Client-Secret aus Vault (ExternalSecret)
+    # callbackUrl sollte automatisch aus Ingress-Hostname generiert werden
+    callbackUrl: "https://catalog.{{ .Values.global.domain }}/callback"
+    enableSelfSignup: false
+
+  authorizer:
+    # Initial Admin-User (muss in Keycloak existieren)
+    initialAdmins:
+      - "admin"
+    principalDomain: "{{ .Values.global.domain }}"
+
+  # ============================================================
+  # Elasticsearch / OpenSearch (für Search-Index)
+  # ============================================================
+  # OpenMetadata benötigt Elasticsearch oder OpenSearch.
+  # Optionen:
+  # A) OpenSearch als separate Chart-Dependency (enterprise)
+  # B) OM-eingebautes Elasticsearch (einfacher, Standard)
+  # Entscheidung: Option B (OM-eigenes Elasticsearch) für den Start.
+  # Später zu OpenSearch migrierbar.
+  elasticsearch:
+    enabled: true
+
+  # ============================================================
+  # Ingress
+  # ============================================================
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      # OM kann große Metadaten-Payloads hochladen
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    hosts:
+      - host: "catalog.{{ .Values.global.domain }}"
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: openmetadata-tls
+        hosts:
+          - "catalog.{{ .Values.global.domain }}"
+
+  # ============================================================
+  # Service
+  # ============================================================
+  service:
+    type: ClusterIP
+    port: 8585
+
+  # ============================================================
+  # Replicas (OM stateful, aber können bei Bedarf skaliert werden)
+  # ============================================================
+  replicaCount: 1

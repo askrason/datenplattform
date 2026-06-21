@@ -1,0 +1,125 @@
+{{- if .Values.networkPolicies.enabled }}
+# ============================================================
+# TICKET-007: OpenMetadata NetworkPolicy
+# ============================================================
+# OpenMetadata benötigt Zugriff auf:
+# - PostgreSQL (Metastore, Port 5432)
+# - Airflow (REST-API für Pipeline-Metadaten, Port 8080)
+# - Trino (SQL-Metadaten crawlen, Port 8080)
+# - MinIO (Storage-Metadaten crawlen, Port 9000)
+# - Keycloak (OIDC, Port 8080/8443)
+# - Elasticsearch (OM-intern, Port 9200)
+# - DNS (Port 53)
+#
+# Ingress:
+# - Port 8585 vom Ingress Controller (UI/API)
+# - Port 8585 von Airflow-Scheduler (REST-API-Calls für Metadaten-Push)
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-openmetadata-netpol
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: openmetadata
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openmetadata
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # ============================================================
+  # INGRESS: Wer darf mit OpenMetadata sprechen?
+  # ============================================================
+  ingress:
+    # --- Ingress Controller → OM UI/API ---
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8585
+
+    # --- Airflow Scheduler → OM (REST-API für Metadaten-Push) ---
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: airflow
+              component: scheduler
+      ports:
+        - protocol: TCP
+          port: 8585
+
+  # ============================================================
+  # EGRESS: Wohin darf OpenMetadata verbindungen herstellen?
+  # ============================================================
+  egress:
+    # --- DNS ---
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # --- PostgreSQL (Metastore) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # --- Airflow Webserver (REST-API für Pipeline-Metadaten) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: airflow
+              component: webserver
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # --- Trino (SQL-Metadaten crawlen) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trino
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # --- MinIO (Storage-Metadaten crawlen) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+
+    # --- Keycloak (OIDC Token Validation) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8443
+
+    # --- Elasticsearch / OpenSearch (OM-intern für Search-Index) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: elasticsearch
+      ports:
+        - protocol: TCP
+          port: 9200
+{{- end }}

@@ -295,22 +295,100 @@ keycloak:
   # 2 Replicas + Infinispan-Cache, Bitnami-OCI-Hinweis s. Chart.yaml)
 
 # ============================================================
-# OPENMETADATA
+# OPENMETADATA (TICKET-007) – volle Konfiguration in values/openmetadata.yaml
 # ============================================================
+# Data Catalog & Governance Platform.
+# ADR-001: OM-eigenes Airflow deaktiviert; nutzt eigenständiges Airflow (TICKET-005) per REST-API.
+# Details siehe values/openmetadata.yaml
 openmetadata:
   enabled: true
+
+  # ADR-001: Airflow-Dependency deaktivieren
+  airflow:
+    enabled: false
+
   podSecurityContext:
     <<: *defaultPodSecurityContext
     runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
   securityContext:
     <<: *defaultSecurityContext
+    # AUSNAHME: readOnlyRootFilesystem deaktiviert.
+    # Grund: OM schreibt temporäre Dateien, Logs, Search-Indizes.
+    # Mitigiert durch: emptyDir für /tmp, NetworkPolicy.
     readOnlyRootFilesystem: false
+
+  extraVolumes:
+    - name: tmp
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: tmp
+      mountPath: /tmp
+
   resources:
     requests: { cpu: 500m, memory: 1Gi }
     limits:   { cpu: 2000m, memory: 4Gi }
+
+  replicaCount: 1
+
   config:
     database:
-      existingSecret: openmetadata-db-secret
+      host: "{{ .Release.Name }}-postgresql"
+      port: 5432
+      driverClass: "org.postgresql.Driver"
+      dbScheme: "postgresql"
+      dbUseSSL: false
+      databaseName: openmetadata
+      existingSecret: openmetadata-db-credentials
+      existingSecretPasswordKey: password
+
+  pipelineServiceClientConfig:
+    enabled: true
+    className: "org.openmetadata.service.clients.pipeline.airflow.AirflowRESTClient"
+    apiEndpoint: "http://{{ .Release.Name }}-airflow-webserver:8080"
+    metadataApiEndpoint: "http://{{ .Release.Name }}-openmetadata:8585/api"
+    verifySSL: false
+    secretsManagerCredentials:
+      existingSecret: openmetadata-airflow-credentials
+      existingSecretKey: api-token
+
+  authentication:
+    provider: "custom-oidc"
+    publicKeyUrls:
+      - "https://{{ .Values.global.domain }}/auth/realms/data-platform/protocol/openid-connect/certs"
+    authority: "https://{{ .Values.global.domain }}/auth/realms/data-platform"
+    clientId: "openmetadata"
+    callbackUrl: "https://catalog.{{ .Values.global.domain }}/callback"
+    enableSelfSignup: false
+
+  authorizer:
+    initialAdmins:
+      - "admin"
+    principalDomain: "{{ .Values.global.domain }}"
+
+  elasticsearch:
+    enabled: true
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    hosts:
+      - host: "catalog.{{ .Values.global.domain }}"
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: openmetadata-tls
+        hosts:
+          - "catalog.{{ .Values.global.domain }}"
+
+  service:
+    type: ClusterIP
+    port: 8585
 
 # ============================================================
 # APACHE SUPERSET  (bevorzugt gegenüber Metabase für OSS)
