@@ -1,0 +1,20 @@
+{{- if .Values.keycloak.enabled }}
+# ============================================================
+# TICKET-010: Keycloak Realm ConfigMap
+# ============================================================
+# ConfigMap die files/keycloak-realm.json als Realm-Import-Datei vorhält.
+# Keycloak mounted diese ConfigMap und importiert den Realm beim Start
+# (aktiviert durch --import-realm Flag in values/keycloak.yaml).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-keycloak-realm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: keycloak
+data:
+  realm.json: |
+{{ .Files.Get "files/keycloak-realm.json" | indent 4 }}
+{{- end }}

@@ -1,0 +1,297 @@
+{
+  "realm": "data-platform",
+  "enabled": true,
+  "displayName": "Data Platform",
+  "displayNameHtml": "Data Platform Realm",
+  "clients": [
+    {
+      "clientId": "airflow",
+      "name": "Apache Airflow",
+      "description": "Airflow Webserver OIDC Client",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "https://airflow.DOMAIN/oauth-authorized/keycloak"
+      ],
+      "webOrigins": [
+        "https://airflow.DOMAIN"
+      ],
+      "defaultClientScopes": [
+        "openid",
+        "email",
+        "profile"
+      ],
+      "optionalClientScopes": [
+        "roles",
+        "groups"
+      ]
+    },
+    {
+      "clientId": "superset",
+      "name": "Apache Superset",
+      "description": "Superset BI OIDC Client",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "https://bi.DOMAIN/oauth-authorized/keycloak"
+      ],
+      "webOrigins": [
+        "https://bi.DOMAIN"
+      ],
+      "defaultClientScopes": [
+        "openid",
+        "email",
+        "profile"
+      ],
+      "optionalClientScopes": [
+        "roles",
+        "groups"
+      ]
+    },
+    {
+      "clientId": "openmetadata",
+      "name": "OpenMetadata",
+      "description": "OpenMetadata Data Catalog OIDC Client",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "https://catalog.DOMAIN/callback"
+      ],
+      "webOrigins": [
+        "https://catalog.DOMAIN"
+      ],
+      "defaultClientScopes": [
+        "openid",
+        "email",
+        "profile"
+      ],
+      "optionalClientScopes": [
+        "roles",
+        "groups"
+      ]
+    },
+    {
+      "clientId": "metabase",
+      "name": "Metabase (via oauth2-proxy)",
+      "description": "Metabase BI via oauth2-proxy OIDC",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "https://metabase.DOMAIN/oauth2/callback"
+      ],
+      "webOrigins": [
+        "https://metabase.DOMAIN"
+      ],
+      "defaultClientScopes": [
+        "openid",
+        "email",
+        "profile"
+      ],
+      "optionalClientScopes": [
+        "roles",
+        "groups"
+      ]
+    },
+    {
+      "clientId": "minio",
+      "name": "MinIO Console",
+      "description": "MinIO S3 Console OIDC Client",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "https://minio-console.DOMAIN/oauth_callback"
+      ],
+      "webOrigins": [
+        "https://minio-console.DOMAIN"
+      ],
+      "defaultClientScopes": [
+        "openid",
+        "email",
+        "profile"
+      ],
+      "optionalClientScopes": [
+        "roles",
+        "groups"
+      ]
+    },
+    {
+      "clientId": "trino",
+      "name": "Trino (optional, future)",
+      "description": "Trino Query Engine OIDC Client (optional, für zukünftige Auth)",
+      "enabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "https://trino.DOMAIN/ui/oauth2/callback"
+      ],
+      "webOrigins": [
+        "https://trino.DOMAIN"
+      ],
+      "defaultClientScopes": [
+        "openid",
+        "email",
+        "profile"
+      ],
+      "optionalClientScopes": [
+        "roles",
+        "groups"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "platform-admin",
+      "path": "/platform-admin",
+      "clientRoles": {
+        "airflow": [
+          "airflow-admin"
+        ],
+        "superset": [
+          "superset-admin"
+        ],
+        "openmetadata": [
+          "admin"
+        ],
+        "metabase": [
+          "admin"
+        ],
+        "minio": [
+          "console-admin"
+        ]
+      }
+    },
+    {
+      "name": "data-engineer",
+      "path": "/data-engineer",
+      "clientRoles": {
+        "airflow": [
+          "airflow-user"
+        ],
+        "superset": [
+          "superset-analyst"
+        ],
+        "openmetadata": [
+          "data-consumer"
+        ],
+        "metabase": [
+          "normal"
+        ]
+      }
+    },
+    {
+      "name": "data-analyst",
+      "path": "/data-analyst",
+      "clientRoles": {
+        "superset": [
+          "superset-viewer"
+        ],
+        "openmetadata": [
+          "data-consumer"
+        ],
+        "metabase": [
+          "normal"
+        ]
+      }
+    },
+    {
+      "name": "viewer",
+      "path": "/viewer",
+      "clientRoles": {
+        "superset": [
+          "superset-viewer"
+        ],
+        "openmetadata": [
+          "data-consumer"
+        ],
+        "metabase": [
+          "read-only"
+        ]
+      }
+    }
+  ],
+  "roles": {
+    "client": {
+      "airflow": [
+        {
+          "name": "airflow-admin",
+          "containerId": "airflow"
+        },
+        {
+          "name": "airflow-user",
+          "containerId": "airflow"
+        }
+      ],
+      "superset": [
+        {
+          "name": "superset-admin",
+          "containerId": "superset"
+        },
+        {
+          "name": "superset-analyst",
+          "containerId": "superset"
+        },
+        {
+          "name": "superset-viewer",
+          "containerId": "superset"
+        }
+      ],
+      "openmetadata": [
+        {
+          "name": "admin",
+          "containerId": "openmetadata"
+        },
+        {
+          "name": "data-consumer",
+          "containerId": "openmetadata"
+        }
+      ],
+      "metabase": [
+        {
+          "name": "admin",
+          "containerId": "metabase"
+        },
+        {
+          "name": "normal",
+          "containerId": "metabase"
+        },
+        {
+          "name": "read-only",
+          "containerId": "metabase"
+        }
+      ],
+      "minio": [
+        {
+          "name": "console-admin",
+          "containerId": "minio"
+        },
+        {
+          "name": "console-user",
+          "containerId": "minio"
+        }
+      ]
+    }
+  },
+  "passwordPolicy": "length(12) and upperCase(1) and specialChars(1)",
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "permanentLockout": false,
+  "maxDeltaTimeSeconds": 300,
+  "waitIncrementSeconds": 60,
+  "minQuickLoginWaitSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "quickLoginCheckMilliSeconds": 1000,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "accessTokenLifespan": 900,
+  "refreshTokenLifespan": 28800,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "revokeRefreshToken": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "userManagedAccessAllowed": false,
+  "attributes": {
+    "displayName": "Data Platform Keycloak",
+    "frontendUrl": "https://auth.DOMAIN"
+  }
+}

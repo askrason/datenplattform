@@ -1,0 +1,120 @@
+{{- if .Values.networkPolicies.enabled }}
+# ============================================================
+# TICKET-010: Keycloak NetworkPolicy
+# ============================================================
+# Keycloak benötigt:
+# - Ingress: Port 8080 von Ingress Controller (UI + OIDC) + alle Stack-Pods (OIDC)
+# - Ingress: Port 7800 von Keycloak-Pods untereinander (Infinispan-Clustering)
+# - Egress: PostgreSQL (5432), DNS (53), Keycloak-intern (7800)
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-keycloak-netpol
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: keycloak
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # ============================================================
+  # INGRESS: Wer darf mit Keycloak sprechen?
+  # ============================================================
+  ingress:
+    # --- Ingress Controller → Keycloak UI/OIDC (Port 8080) ---
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # --- Alle Stack-Pods → Keycloak OIDC (Port 8080) ---
+    # Airflow, Superset, OpenMetadata, Metabase (oauth2-proxy), MinIO
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: airflow
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: superset
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openmetadata
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: metabase-oauth2-proxy
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # --- Keycloak-Pods untereinander (Infinispan-Clustering, Port 7800) ---
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - protocol: TCP
+          port: 7800
+
+  # ============================================================
+  # EGRESS: Wohin darf Keycloak verbindungen herstellen?
+  # ============================================================
+  egress:
+    # --- DNS ---
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # --- PostgreSQL (Keycloak-DB) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # --- Keycloak-intern (Infinispan, Port 7800) ---
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - protocol: TCP
+          port: 7800
+
+{{- end }}

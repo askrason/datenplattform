@@ -289,10 +289,84 @@ trino:
 # ============================================================
 # KEYCLOAK (TICKET-010) – volle Konfiguration in values/keycloak.yaml
 # ============================================================
+# Keycloak als zentraler Identity Provider (IdP) für SSO via OIDC.
+# ADR-005: Keycloak ist der einzige IdP für alle Stack-Komponenten.
+# Details siehe values/keycloak.yaml
 keycloak:
   enabled: true
-  # Details: values/keycloak.yaml (Realm-Import, externalDatabase: keycloak,
-  # 2 Replicas + Infinispan-Cache, Bitnami-OCI-Hinweis s. Chart.yaml)
+
+  auth:
+    adminUser: admin
+    existingSecret: keycloak-credentials
+    existingSecretKey: admin-password
+
+  podSecurityContext:
+    <<: *defaultPodSecurityContext
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  containerSecurityContext:
+    <<: *defaultSecurityContext
+    # AUSNAHME: readOnlyRootFilesystem deaktiviert.
+    # Grund: Keycloak schreibt temporäre Provider-Dateien, Logs.
+    # Mitigiert durch: emptyDir für /tmp, restriktive NetworkPolicy.
+    readOnlyRootFilesystem: false
+
+  extraVolumes:
+    - name: tmp
+      emptyDir: {}
+
+  extraVolumesFromConfigMaps:
+    - name: realm-config
+      configMap:
+        name: "{{ .Release.Name }}-keycloak-realm"
+
+  extraVolumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    - name: realm-config
+      mountPath: /opt/bitnami/keycloak/data/import
+      readOnly: true
+
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: 2000m, memory: 2Gi }
+
+  extraStartupArgs: "--import-realm"
+
+  postgresql:
+    enabled: false
+
+  externalDatabase:
+    type: postgresql
+    host: "{{ .Release.Name }}-postgresql"
+    port: 5432
+    database: keycloak
+    username: keycloak
+    existingSecret: keycloak-db-credentials
+    existingSecretPasswordKey: password
+
+  replicaCount: 2
+
+  cache:
+    enabled: true
+    stackName: kubernetes
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: "auth.{{ .Values.global.domain }}"
+    tls: true
+    selfSigned: false
+    extraTls:
+      - hosts:
+          - "auth.{{ .Values.global.domain }}"
+        secretName: keycloak-tls
 
 # ============================================================
 # OPENMETADATA (TICKET-007) – volle Konfiguration in values/openmetadata.yaml

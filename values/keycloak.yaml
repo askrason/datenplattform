@@ -1,0 +1,154 @@
+# ============================================================
+# TICKET-010: Keycloak Sub-Chart
+# ============================================================
+# Keycloak als zentraler Identity Provider (IdP) für SSO via OIDC.
+# Alle Stack-Komponenten nutzen Keycloak für Single Sign-On.
+#
+# Chart-Repo: oci://registry-1.docker.io/bitnamicharts (OCI, nicht klassisches Repo!)
+# Dokumentation: https://www.keycloak.org/
+#
+# WICHTIG (CLAUDE.md, Known Issue #6): Bitnami hat sein klassisches
+# Helm-Repository (charts.bitnami.com) im Aug. 2025 abgelöst.
+# Charts kommen jetzt aus der OCI-Registry. Version/Image-Tag verifizieren!
+#
+# HA-Architektur: 2 Replicas mit Infinispan-Clustering
+# ============================================================
+
+keycloak:
+  enabled: true
+
+  # ============================================================
+  # Admin-Benutzer (Initial)
+  # ============================================================
+  auth:
+    adminUser: admin
+    # Passwort aus Vault via ExternalSecret
+    existingSecret: keycloak-credentials
+    existingSecretKey: admin-password
+
+  # ============================================================
+  # Security Context
+  # ============================================================
+  # AUSNAHME: readOnlyRootFilesystem: false
+  # Grund: Keycloak schreibt temporäre Provider-Dateien, Logs, Cache-Daten
+  # Mitigiert durch: emptyDir für /tmp, restriktive NetworkPolicy
+
+  podSecurityContext:
+    runAsNonRoot: true
+    fsGroupChangePolicy: OnRootMismatch
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+  # ============================================================
+  # Volumes: /tmp + Realm-Import-ConfigMap
+  # ============================================================
+  extraVolumes:
+    - name: tmp
+      emptyDir: {}
+
+  extraVolumesFromConfigMaps:
+    - name: realm-config
+      configMap:
+        name: "{{ .Release.Name }}-keycloak-realm"
+
+  extraVolumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    - name: realm-config
+      mountPath: /opt/bitnami/keycloak/data/import
+      readOnly: true
+
+  # ============================================================
+  # Ressourcen (HA mit Infinispan benötigt mehr Memory)
+  # ============================================================
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+  # ============================================================
+  # Realm beim Start importieren (GitOps)
+  # ============================================================
+  # Keycloak wird mit --import-realm gestartet und lädt die Realm-JSON
+  # aus der ConfigMap automatisch beim ersten Start.
+  extraStartupArgs: "--import-realm"
+
+  # ============================================================
+  # Datenbankverbindung (PostgreSQL aus TICKET-002)
+  # ============================================================
+  # Keycloak nutzt das zentrale PostgreSQL aus TICKET-002.
+  # Eigenes PostgreSQL-SubChart wird deaktiviert.
+  postgresql:
+    enabled: false
+
+  externalDatabase:
+    type: postgresql
+    host: "{{ .Release.Name }}-postgresql"
+    port: 5432
+    database: keycloak
+    username: keycloak
+    # Passwort aus Vault via ExternalSecret
+    existingSecret: keycloak-db-credentials
+    existingSecretPasswordKey: password
+
+  # ============================================================
+  # HA-Modus: Clustering mit Infinispan
+  # ============================================================
+  # 2 Replicas für Hochverfügbarkeit.
+  # Infinispan übernimmt Session-Replikation zwischen Pods.
+  replicaCount: 2
+
+  # Cache & Clustering
+  cache:
+    enabled: true
+    stackName: kubernetes  # Kubernetes-Discovery für Infinispan-Clustering
+
+  # ============================================================
+  # Ingress
+  # ============================================================
+  # Keycloak-UI + OIDC-Endpoints
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: "auth.{{ .Values.global.domain }}"
+    tls: true
+    selfSigned: false
+    extraTls:
+      - hosts:
+          - "auth.{{ .Values.global.domain }}"
+        secretName: keycloak-tls
+
+  # ============================================================
+  # Service
+  # ============================================================
+  service:
+    type: ClusterIP
+    port: 8080
+
+  # ============================================================
+  # OIDC-Client-Konfiguration (in Realm-JSON vorkonfiguriert)
+  # ============================================================
+  # Clients werden per Realm-Import (files/keycloak-realm.json) erstellt:
+  # - airflow
+  # - superset
+  # - openmetadata
+  # - metabase (für oauth2-proxy)
+  # - minio
+  # - trino (optional)
+  #
+  # Client-Secrets: NICHT im Realm-JSON (GitOps-Safe).
+  # Secrets werden nach Deployment separat in Keycloak gesetzt
+  # (siehe docs/keycloak-setup.md).
