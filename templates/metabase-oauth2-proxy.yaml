@@ -1,0 +1,154 @@
+{{- if .Values.metabase.enabled }}
+# ============================================================
+# TICKET-009: oauth2-proxy Deployment (Keycloak SSO für Metabase)
+# ============================================================
+# oauth2-proxy übernimmt Authentifizierung über Keycloak OIDC.
+# Nach erfolgreichem Login wird der Request an Metabase (intern Port 3000) weitergeleitet.
+# Metabase selbst hat keinen eigenen OIDC-Support (OSS-Limitation).
+#
+# Architektur:
+#   Ingress → oauth2-proxy:4180 → Metabase:3000 (intern)
+#   Authentifizierung: Keycloak OIDC
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-metabase-oauth2-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: metabase-oauth2-proxy
+    app.kubernetes.io/component: oauth2-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: metabase-oauth2-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/name: metabase-oauth2-proxy
+    spec:
+      # ============================================================
+      # Security Context
+      # ============================================================
+      podSecurityContext:
+        runAsNonRoot: true
+        fsGroupChangePolicy: OnRootMismatch
+        runAsUser: 2000
+        runAsGroup: 2000
+        fsGroup: 2000
+
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.0
+          imagePullPolicy: IfNotPresent
+
+          # ============================================================
+          # Security Context
+          # ============================================================
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+
+          # ============================================================
+          # Args: oauth2-proxy Konfiguration
+          # ============================================================
+          args:
+            - --provider=oidc
+            - --oidc-issuer-url=https://{{ .Values.global.domain }}/auth/realms/data-platform
+            - --client-id=metabase
+            - --upstream=http://{{ .Release.Name }}-metabase:3000
+            - --http-address=0.0.0.0:4180
+            - --email-domain=*
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            - --skip-provider-button=true
+            - --redirect-url=https://metabase.{{ .Values.global.domain }}/oauth2/callback
+
+          # ============================================================
+          # Environment Variables
+          # ============================================================
+          env:
+            # Client Secret aus Vault (via ExternalSecret)
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: metabase-oidc-credentials
+                  key: client-secret
+
+            # Cookie Secret für Session-Verschlüsselung
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: metabase-oidc-credentials
+                  key: cookie-secret
+
+          # ============================================================
+          # Ports
+          # ============================================================
+          ports:
+            - containerPort: 4180
+              name: http
+              protocol: TCP
+
+          # ============================================================
+          # Ressourcen (minimal, nur Proxy)
+          # ============================================================
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+          # ============================================================
+          # Liveness & Readiness Probes
+          # ============================================================
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+---
+# ============================================================
+# Service für oauth2-proxy
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-metabase-oauth2-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: metabase-oauth2-proxy
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4180
+      targetPort: 4180
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: metabase-oauth2-proxy
+
+{{- end }}

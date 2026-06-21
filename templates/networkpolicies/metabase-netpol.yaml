@@ -1,0 +1,128 @@
+{{- if .Values.networkPolicies.enabled }}
+# ============================================================
+# TICKET-009: Metabase NetworkPolicy
+# ============================================================
+# Zwei Teile:
+# 1. oauth2-proxy: Ingress von Ingress Controller (4180), Egress zu Metabase (3000) + Keycloak
+# 2. Metabase: Ingress NUR von oauth2-proxy (3000), Egress zu Trino (8080) + PostgreSQL (5432)
+# ============================================================
+
+---
+# ============================================================
+# NetworkPolicy für oauth2-proxy
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-metabase-oauth2-proxy-netpol
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: metabase-oauth2-proxy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: metabase-oauth2-proxy
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # --- Ingress ---
+  ingress:
+    # Ingress Controller → oauth2-proxy (Port 4180)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 4180
+
+  # --- Egress ---
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # Metabase (upstream, Port 3000)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: metabase
+      ports:
+        - protocol: TCP
+          port: 3000
+
+    # Keycloak (OIDC Token Validation)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8443
+
+---
+# ============================================================
+# NetworkPolicy für Metabase
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-metabase-netpol
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: metabase
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: metabase
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # --- Ingress ---
+  ingress:
+    # oauth2-proxy → Metabase (Port 3000, NUR von oauth2-proxy!)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: metabase-oauth2-proxy
+      ports:
+        - protocol: TCP
+          port: 3000
+
+  # --- Egress ---
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # Trino (SQL-Queries, Port 8080)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trino
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # PostgreSQL (App-DB, Port 5432)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+
+{{- end }}
