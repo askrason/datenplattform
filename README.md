@@ -74,12 +74,30 @@ Nach Kern-Plattform:
 - TICKET-015: Data Analyst Dev (BI-fokussiert, ohne Vault/Keycloak)
 - TICKET-016: Trivy Security Scanning (integriert in `./scripts/validate.sh`)
 
-## Verwendung mit Claude Code
+## Installation & Deployment
+
+**Quick Start (10 min):**
+```bash
+git clone https://github.com/askrason/datenplattform.git
+cd datenplattform
+vim values.yaml  # Set your domain
+helm dependency update
+./scripts/validate.sh
+helm install data-platform . --values values.yaml
+```
+
+See **[Quick Start Guide](docs/quickstart.md)** for details.
+
+**Full Production Deployment:**
+See **[Installation Guide](docs/installation.md)** – covers prerequisites, Vault setup, DNS, TLS, troubleshooting.
+
+## Development & Contributing
 
 1. CLAUDE.md in das Root des Helm-Chart-Repositories legen
 2. Pro Session ein Ticket aus `tickets/` als Kontext mitgeben
 3. Empfohlen: "Lies CLAUDE.md und setze dann TICKET-00X um"
 4. Nach jedem Ticket: `./scripts/validate.sh` ausführen
+5. See **[Onboarding Guide](docs/onboarding.md)** for developer setup
 
 ## Vor dem ersten `helm dependency update`
 
