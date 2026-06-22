@@ -11,10 +11,36 @@ Ressourcen: 6-8 GB RAM. Start-Zeit: ~4-5 Minuten.
 - WSL2 mit ca. 6-8 GB RAM
 - kubectl und helm installiert
 
+## WICHTIGE FUNDE (diese Überarbeitung)
+
+**1. Secret-Bootstrap erforderlich** (analog TICKET-014): `vault.enabled: false`
+und `external-secrets.enabled: false` bedeuten, dass die von PostgreSQL,
+Superset, Metabase und Trino über `existingSecret`-Felder referenzierten
+Kubernetes-Secrets nie erzeugt werden. Lösung: derselbe
+`scripts/bootstrap-dev-secrets.sh` wie in TICKET-014, hier um den
+`analyst`-Zweig ergänzt.
+
+**2. OIDC/oauth2-proxy hängen an Keycloak, das hier deaktiviert ist:**
+- Superset ist in TICKET-008 fest auf `AUTH_TYPE = AUTH_OAUTH` mit einer
+  Keycloak-`server_metadata_url` konfiguriert. Ohne Keycloak schlägt jeder
+  Login fehl (die Metadata-URL ist nicht erreichbar).
+- Metabase läuft laut TICKET-009 immer hinter einem oauth2-proxy-Sidecar, der
+  ebenfalls zwingend einen OIDC-Issuer (Keycloak) braucht. Ohne Keycloak kommt
+  niemand mehr durch den Proxy zu Metabase.
+
+**Lösung:** Für dieses Dev-Profil wird Superset auf den eingebauten
+`AUTH_DB`-Login zurückgesetzt, und Metabase wird **direkt** (ohne
+oauth2-proxy) exponiert. Das setzt voraus, dass das oauth2-proxy-Deployment
+und die zugehörige Ingress-Ressource aus TICKET-009 an die Bedingung
+`.Values.keycloak.enabled` geknüpft werden.
+
 ## Kontext-Session
 ```
-Abgeschlossene Tickets: TICKET-001 bis TICKET-013
-Neue Dateien: ci/values-analyst-dev.yaml, scripts/setup-analyst-dev.sh, docs/analyst-dev-setup.md
+Abgeschlossene Tickets: TICKET-001 bis TICKET-014
+Neue Dateien: ci/values-analyst-dev.yaml, scripts/setup-analyst-dev.sh,
+  scripts/bootstrap-dev-secrets.sh, docs/analyst-dev-setup.md
+Überarbeitung: Auth-Fallbacks (Superset AUTH_DB, Metabase direct), Secret-Bootstrap
+Nachtrag zu TICKET-009: Metabase templates mit keycloak.enabled conditionals
 ```
 
 ## Zu erstellende Dateien
@@ -50,6 +76,9 @@ trino:
       limits: { cpu: 1000m, memory: 2Gi }
 
 # Superset: Single Replica (Primary BI Tool)
+# KEIN Keycloak im Dev-Profil -> OIDC-Override aus TICKET-008 zurücksetzen,
+# sonst schlägt jeder Login fehl (server_metadata_url zeigt auf nicht
+# existierenden Keycloak-Service).
 superset:
   replicaCount: 1
   celeryWorker:
@@ -59,8 +88,17 @@ superset:
       resources:
         requests: { cpu: 50m, memory: 128Mi }
         limits: { cpu: 100m, memory: 256Mi }
+  configOverrides:
+    oidc_auth: |
+      # Dev-Profil ohne Keycloak: Standard-DB-Login statt OIDC.
+      from flask_appbuilder.security.manager import AUTH_DB
+      AUTH_TYPE = AUTH_DB
+      AUTH_USER_REGISTRATION = False
 
 # Metabase: Single Replica (Secondary BI Tool)
+# KEIN Keycloak -> oauth2-proxy-Sidecar aus TICKET-009 wird übersprungen
+# (Bedingung .Values.keycloak.enabled). Metabase wird stattdessen direkt
+# exponiert (templates/metabase-ingress-direct.yaml).
 metabase:
   replicaCount: 1
 

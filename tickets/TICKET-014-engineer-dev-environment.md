@@ -11,10 +11,28 @@ Ressourcen: 4-6 GB RAM. Start-Zeit: ~3-4 Minuten.
 - WSL2 mit ca. 4-6 GB RAM
 - kubectl und helm installiert
 
+## WICHTIGER FUND (diese Überarbeitung) – Secret-Bootstrap erforderlich
+
+`vault.enabled: false` und `external-secrets.enabled: false` bedeuten: Es gibt
+**keinen** Mechanismus mehr, der die von PostgreSQL/Airflow/Trino/MinIO über
+`existingSecret`-Felder referenzierten Kubernetes-Secrets erzeugt (das macht
+normalerweise ausschließlich ESO via ClusterSecretStore, siehe TICKET-004).
+Ohne Vault bleiben diese Secrets schlicht nicht vorhanden, und betroffene Pods
+hängen in `CreateContainerConfigError`.
+
+**Lösung:** Ein zusätzliches Bootstrap-Script legt für dieses Dev-Profil die
+benötigten Secrets direkt als Klartext-`kubectl create secret`-Objekte an –
+*ausschließlich* für den lokalen, ephemeren k3s-Cluster. Das ist eine bewusste,
+eng begrenzte Ausnahme von der "Kein Klartext"-Regel aus CLAUDE.md (die sich
+auf `values.yaml`/Templates im Repo bezieht, nicht auf zur Laufzeit generierte,
+nie committete Dev-Secrets). Siehe auch CLAUDE.md, Known Issue #7.
+
 ## Kontext-Session
 ```
 Abgeschlossene Tickets: TICKET-001 bis TICKET-013
-Neue Dateien: ci/values-engineer-dev.yaml, scripts/setup-engineer-dev.sh, docs/engineer-dev-setup.md
+Neue Dateien: ci/values-engineer-dev.yaml, scripts/setup-engineer-dev.sh,
+  scripts/bootstrap-dev-secrets.sh, docs/engineer-dev-setup.md
+Überarbeitung: Auth-Fallback (AUTH_DB) + Secret-Bootstrap-Anforderung
 ```
 
 ## Zu erstellende Dateien
@@ -40,12 +58,18 @@ postgresql:
   persistence:
     size: 20Gi
 
-# Airflow: Full Stack (this is the focus)
+# Airflow: Full Stack (DAG Development Focus)
+# OHNE Keycloak -> AUTH_DB statt OIDC (keine Keycloak-OIDC im Dev)
 airflow:
   scheduler:
     resources:
       requests: { cpu: 250m, memory: 512Mi }
       limits: { cpu: 500m, memory: 1Gi }
+  webserverConfig: |
+    # Dev-Profil ohne Keycloak: einfache Passwort-Auth statt OIDC.
+    from airflow.www.security import AirflowSecurityManager
+    AUTH_TYPE = 1  # AUTH_DB – Standard-Login mit lokal angelegtem Admin-User
+    AUTH_USER_REGISTRATION = False
 
 # Trino: Minimal
 trino:

@@ -10,10 +10,21 @@ Einfache one-liner Setup mit Validierung.
 - WSL2 mit ca. 8-16 GB RAM
 - kubectl und helm installiert
 
+## Hinweis (diese Überarbeitung - TICKET-013 Vault-Fix)
+Dieses Profil lässt Vault + External Secrets Operator AKTIV (nur mit reduzierten
+Replicas) – im Gegensatz zu TICKET-014/TICKET-015, die beide komplett ohne
+Vault/Keycloak laufen und dafür einen eigenen Secret-Bootstrap-Mechanismus
+benötigen (siehe dort). Hier reicht es, Vault in den Standalone-Modus zu
+versetzen.
+
+**WICHTIG:** `server.replicaCount` existiert im offiziellen HashiCorp Vault Chart
+NICHT. Verwende stattdessen `ha.enabled: false + standalone.enabled: true`.
+
 ## Kontext-Session
 ```
 Abgeschlossene Tickets: TICKET-001 bis TICKET-012
 Neue Dateien: ci/values-k3s-dev.yaml, scripts/setup-k3s-dev.sh, docs/k3s-dev-setup.md
+Überarbeitung: Vault-Konfiguration korrigiert (ha.enabled + standalone.enabled)
 ```
 
 ## Zu erstellende Dateien
@@ -38,12 +49,26 @@ postgresql:
   persistence:
     size: 20Gi  # Reduziert
 
-# Vault: Single Replica (kein HA in Dev)
+# Vault: Standalone-Modus statt HA (kein Cluster im Dev)
+# WICHTIG: server.replicaCount existiert nicht im offiziellen Chart.
+# Verwende stattdessen ha.enabled + standalone.enabled
 vault:
   server:
-    replicaCount: 1
-  persistence:
-    size: 10Gi
+    ha:
+      enabled: false
+    standalone:
+      enabled: true
+      config: |
+        ui = true
+        listener "tcp" {
+          tls_disable = 1
+          address = "[::]:8200"
+        }
+        storage "file" {
+          path = "/vault/data"
+        }
+    dataStorage:
+      size: 10Gi
 
 # Keycloak: Single Replica
 keycloak:
