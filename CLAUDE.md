@@ -328,6 +328,43 @@ resources:
      (kommerziell) oder Alternativ-Charts (z.B. CloudNativePG für PostgreSQL,
      Codecentric- oder offizielles Keycloak-Operator-Chart) evaluieren.
 
+7. **Dev-Profile (TICKET-013–015) und Secrets**: Die lokalen Dev-Environments
+   für WSL2/k3s deployen aus Ressourcengründen teilweise OHNE Vault und
+   External Secrets Operator (TICKET-014 "Engineer", TICKET-015 "Analyst";
+   TICKET-013 "Full Stack" behält Vault, nur im Standalone-Modus). Da alle
+   Komponenten ihre Secrets normalerweise ausschließlich über ESO/Vault
+   erhalten (ADR-003), würden die betroffenen Pods ohne Gegenmaßnahme in
+   `CreateContainerConfigError` hängen bleiben.
+   **Lösung:** `scripts/bootstrap-dev-secrets.sh` legt für die Profile
+   `engineer` und `analyst` die benötigten Kubernetes-Secrets direkt per
+   `kubectl create secret` an (zufällig generierte Klartext-Werte, nie
+   committet). Das ist eine bewusste, eng begrenzte Ausnahme von der
+   "Kein Klartext"-Regel in ADR-003 – diese Regel bezieht sich auf
+   `values.yaml`/Templates im Repository, nicht auf zur Laufzeit auf einem
+   ephemeren, rein lokalen Cluster erzeugte Dev-Secrets. **Niemals** auf
+   geteilten oder produktiven Clustern verwenden.
+   Zusätzlich entfällt in diesen beiden Profilen Keycloak – Superset und
+   Metabase benötigen deshalb einen Dev-Fallback (Superset: `AUTH_DB` statt
+   OIDC; Metabase: direkter Zugriff statt über den oauth2-proxy-Sidecar aus
+   TICKET-009). Die zugehörigen Templates aus TICKET-009 sind dafür an
+   `.Values.keycloak.enabled` gebunden.
+
+---
+
+## Security-Tooling: Trivy (TICKET-016)
+
+Ergänzend zu den projektspezifischen Checks in `scripts/validate.sh`
+(Klartext-Secrets, `runAsNonRoot`, Resource Limits) läuft Trivy als
+unabhängiges, breiter gepflegtes Werkzeug für drei Scan-Arten:
+- `trivy config` – Misconfiguration-Scan der gerenderten Templates
+- `trivy image` – CVE-Scan von Custom-Image (`airflow-dbt`) und Sub-Chart-Images
+  (besonders relevant wegen der Bitnami-OCI-Migration, Known Issue #6)
+- `trivy fs --scanners secret` – Secret-Scan über das gesamte Repository
+
+Ausnahmen NUR mit Begründung in `.trivyignore` (Check-ID, Komponente,
+Begründung, Review-Datum) – keine pauschale Absenkung der Severity-Schwelle.
+Details: `docs/security-scanning.md`, Ticket-Spezifikation in TICKET-016.
+
 ---
 
 ## Entwicklungs-Workflow

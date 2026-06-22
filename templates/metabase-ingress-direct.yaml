@@ -1,0 +1,39 @@
+{{- if and .Values.metabase.enabled (not .Values.keycloak.enabled) }}
+# ============================================================
+# TICKET-009 (ergänzt für TICKET-015): Metabase Direct Ingress
+# ============================================================
+# Wenn Keycloak NICHT deployed ist (z.B. Analyst Dev-Profil),
+# exponiert dieser Ingress Metabase direkt auf Port 3000.
+# oauth2-proxy wird in diesem Fall nicht deployed.
+#
+# Architektur (ohne Keycloak):
+#   Ingress → Metabase:3000 (direkter Zugriff, keine Authentifizierung)
+#
+# Hinweis: Dies ist nur für lokale Dev-Umgebungen gedacht.
+# Für Production IMMER Keycloak + oauth2-proxy verwenden!
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-metabase-direct
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: metabase
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: "metabase.{{ .Values.global.domain }}"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Direkter Zugriff auf Metabase (dev-only!)
+                name: {{ .Release.Name }}-metabase
+                port:
+                  number: 3000
+{{- end }}

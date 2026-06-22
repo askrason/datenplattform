@@ -35,7 +35,7 @@ Projekt-Kontext-Datei für Claude Code. Enthält:
 - Known Issues (inkl. Bitnami-Repo-Migration)
 
 ### tickets/
-12 strukturierte Tickets für Claude Code:
+16 strukturierte Tickets für Claude Code:
 
 | Ticket | Inhalt |
 |--------|--------|
@@ -51,9 +51,14 @@ Projekt-Kontext-Datei für Claude Code. Enthält:
 | TICKET-010 | Keycloak + Realm-Konfiguration |
 | TICKET-011 | Integration Tests + helm test Suite |
 | TICKET-012 | Dokumentation + ADRs |
+| TICKET-013 | k3s Dev-Environment (Full Stack, 8-16 GB RAM) |
+| TICKET-014 | Data Engineer Dev-Environment (Airflow+Trino+PG+MinIO, 4-6 GB) |
+| TICKET-015 | Data Analyst Dev-Environment (Trino+BI-Tools+PG, 6-8 GB) |
+| TICKET-016 | Security Scanning mit Trivy (config/secret/image scans) |
 
 ## Empfohlene Reihenfolge
 
+### Kern-Plattform (Production-Ready)
 TICKET-001 → TICKET-004 (Vault) → TICKET-002 → TICKET-003
 → TICKET-010 (Keycloak) → TICKET-005 (Airflow) → TICKET-006 (Trino)
 → TICKET-007 (OpenMetadata) → TICKET-008 (Superset) → TICKET-009 (Metabase)
@@ -61,6 +66,13 @@ TICKET-001 → TICKET-004 (Vault) → TICKET-002 → TICKET-003
 
 Vault (TICKET-004) sollte früh deployt werden, da alle anderen
 Komponenten ihre Secrets darüber beziehen.
+
+### Optionale Dev-Umgebungen (TICKET-013-016)
+Nach Kern-Plattform:
+- TICKET-013: k3s Dev-Environment (Full Stack, mit Vault)
+- TICKET-014: Data Engineer Dev (Airflow-fokussiert, ohne Vault/Keycloak)
+- TICKET-015: Data Analyst Dev (BI-fokussiert, ohne Vault/Keycloak)
+- TICKET-016: Trivy Security Scanning (integriert in `./scripts/validate.sh`)
 
 ## Verwendung mit Claude Code
 

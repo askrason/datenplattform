@@ -42,6 +42,7 @@ trino:
 
 # ============================================================
 # Superset: Single Replica (Primary BI Tool)
+# OHNE Keycloak -> AUTH_DB statt OIDC (keine Keycloak-OIDC im Dev)
 # ============================================================
 superset:
   replicaCount: 1
@@ -52,6 +53,12 @@ superset:
       resources:
         requests: { cpu: 50m, memory: 128Mi }
         limits: { cpu: 100m, memory: 256Mi }
+  configOverrides:
+    oidc_auth: |
+      # Dev-Profil ohne Keycloak: Standard-DB-Login statt OIDC.
+      from flask_appbuilder.security.manager import AUTH_DB
+      AUTH_TYPE = AUTH_DB
+      AUTH_USER_REGISTRATION = False
 
 # ============================================================
 # Metabase: Single Replica (Secondary BI Tool)

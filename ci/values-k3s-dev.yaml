@@ -29,13 +29,27 @@ postgresql:
     size: 20Gi
 
 # ============================================================
-# Vault: Single Replica (no HA)
+# Vault: Standalone-Modus statt HA (kein Cluster im Dev)
+# WICHTIG: server.replicaCount existiert nicht im offiziellen Chart.
+# Verwende stattdessen ha.enabled + standalone.enabled
 # ============================================================
 vault:
   server:
-    replicaCount: 1
-  persistence:
-    size: 10Gi
+    ha:
+      enabled: false
+    standalone:
+      enabled: true
+      config: |
+        ui = true
+        listener "tcp" {
+          tls_disable = 1
+          address = "[::]:8200"
+        }
+        storage "file" {
+          path = "/vault/data"
+        }
+    dataStorage:
+      size: 10Gi
 
 # ============================================================
 # Keycloak: Single Replica (no Infinispan Clustering)

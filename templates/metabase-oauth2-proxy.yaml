@@ -1,4 +1,4 @@
-{{- if .Values.metabase.enabled }}
+{{- if and .Values.metabase.enabled .Values.keycloak.enabled }}
 # ============================================================
 # TICKET-009: oauth2-proxy Deployment (Keycloak SSO für Metabase)
 # ============================================================

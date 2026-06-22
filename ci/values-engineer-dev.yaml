@@ -31,12 +31,18 @@ postgresql:
 
 # ============================================================
 # Airflow: Full Stack (DAG Development Focus)
+# OHNE Keycloak -> AUTH_DB statt OIDC (keine Keycloak-OIDC im Dev)
 # ============================================================
 airflow:
   scheduler:
     resources:
       requests: { cpu: 250m, memory: 512Mi }
       limits: { cpu: 500m, memory: 1Gi }
+  webserverConfig: |
+    # Dev-Profil ohne Keycloak: einfache Passwort-Auth statt OIDC.
+    from airflow.www.security import AirflowSecurityManager
+    AUTH_TYPE = 1  # AUTH_DB – Standard-Login mit lokal angelegtem Admin-User
+    AUTH_USER_REGISTRATION = False
 
 # ============================================================
 # Trino: Minimal Configuration

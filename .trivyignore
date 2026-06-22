@@ -1,0 +1,15 @@
+# Container Image Security Scan Exceptions (TICKET-016)
+#
+# Format: <CHECK-ID> – <Komponente> – <Begründung> – <Review-Datum>
+#
+# Jede Ausnahme MUSS dokumentiert sein. Keine Blanko-Ausnahmen!
+#
+# Beispiele (diese sind NICHT die endgültigen Exceptions, nur Vorlage):
+#
+# AVD-KSV-0110 – vault (TICKET-004) – IPC_LOCK ist für Vault mlock()
+#   erforderlich und wurde bewusst als einzige zusätzliche Capability erlaubt.
+#   Alle anderen Capabilities sind gedroppt (siehe values/vault.yaml).
+#   Review: vor jedem Major-Upgrade des Vault-Charts (erneut prüfen).
+#
+# Für aktuelle Exceptions diese Datei manuell bearbeiten, mit Check-ID aus
+# Trivy-Output, betroffener Komponente, Begründung und Review-Datum.

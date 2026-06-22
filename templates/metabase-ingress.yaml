@@ -1,4 +1,4 @@
-{{- if .Values.metabase.enabled }}
+{{- if and .Values.metabase.enabled .Values.keycloak.enabled }}
 # ============================================================
 # TICKET-009: Metabase Ingress (zeigt auf oauth2-proxy, nicht auf Metabase direkt)
 # ============================================================
