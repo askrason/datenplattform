@@ -86,10 +86,11 @@ helm dependency update
 helm install data-platform . --values values.yaml
 ```
 
-See **[Quick Start Guide](docs/quickstart.md)** for details.
+See **[Quick Start Guide](docs/quickstart.md)** (English) or **[Schnelleinstieg](docs/quickstart-de.md)** (Deutsch) for details.
 
 **Full Production Deployment:**
-See **[Installation Guide](docs/installation.md)** – covers prerequisites, Vault setup, DNS, TLS, troubleshooting.
+See **[Installation Guide](docs/installation.md)** (English) or **[Installations-Anleitung](docs/installation-de.md)** (Deutsch) 
+– covers prerequisites, Vault setup, DNS, TLS, troubleshooting.
 
 ## Development & Contributing
 
