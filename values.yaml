@@ -265,7 +265,7 @@ trino:
       connector.name=hive
       hive.metastore=file
       hive.metastore.catalog.dir=s3://data-raw/
-      hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
+      hive.s3.endpoint=http://minio.data-storage.svc.cluster.local:9000
       hive.s3.path-style-access=true
       hive.s3.ssl.enabled=false
       hive.s3.aws-credentials-provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
@@ -276,14 +276,14 @@ trino:
       iceberg.catalog.type=hive_metastore
       hive.metastore=file
       hive.metastore.catalog.dir=s3://data-processed/
-      hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
+      hive.s3.endpoint=http://minio.data-storage.svc.cluster.local:9000
       hive.s3.path-style-access=true
       hive.s3.ssl.enabled=false
 
     # --- PostgreSQL Catalog ---
     postgresql.properties: |
       connector.name=postgresql
-      connection-url=jdbc:postgresql://{{ .Release.Name }}-postgresql:5432/
+      connection-url=jdbc:postgresql://postgresql.data-storage.svc.cluster.local:5432/
       connection-user=${ENV:TRINO_PG_USER}
       connection-password=${ENV:TRINO_PG_PASSWORD}
 
@@ -352,7 +352,7 @@ keycloak:
   extraVolumesFromConfigMaps:
     - name: realm-config
       configMap:
-        name: "{{ .Release.Name }}-keycloak-realm"
+        name: "keycloak.auth.svc.cluster.local-realm"
 
   extraVolumeMounts:
     - name: tmp
@@ -372,7 +372,7 @@ keycloak:
 
   externalDatabase:
     type: postgresql
-    host: "{{ .Release.Name }}-postgresql"
+    host: "postgresql.data-storage.svc.cluster.local"
     port: 5432
     database: keycloak
     username: keycloak
@@ -441,7 +441,7 @@ openmetadata:
 
   config:
     database:
-      host: "{{ .Release.Name }}-postgresql"
+      host: "postgresql.data-storage.svc.cluster.local"
       port: 5432
       driverClass: "org.postgresql.Driver"
       dbScheme: "postgresql"
@@ -453,7 +453,7 @@ openmetadata:
   pipelineServiceClientConfig:
     enabled: true
     className: "org.openmetadata.service.clients.pipeline.airflow.AirflowRESTClient"
-    apiEndpoint: "http://{{ .Release.Name }}-airflow-webserver:8080"
+    apiEndpoint: "http://airflow.compute.svc.cluster.local:8080"
     metadataApiEndpoint: "http://{{ .Release.Name }}-openmetadata:8585/api"
     verifySSL: false
     secretsManagerCredentials:
@@ -541,7 +541,7 @@ superset:
 
   supersetNode:
     connections:
-      db_host: "{{ .Release.Name }}-postgresql"
+      db_host: "postgresql.data-storage.svc.cluster.local"
       db_port: 5432
       db_name: superset
       db_user: superset
@@ -685,7 +685,7 @@ metabase:
 
   database:
     type: postgres
-    host: "{{ .Release.Name }}-postgresql"
+    host: "postgresql.data-storage.svc.cluster.local"
     port: 5432
     dbname: metabase
     existingSecret: metabase-db-credentials
