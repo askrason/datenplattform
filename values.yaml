@@ -352,7 +352,7 @@ keycloak:
   extraVolumesFromConfigMaps:
     - name: realm-config
       configMap:
-        name: "keycloak.auth.svc.cluster.local-realm"
+        name: "{{ .Release.Name }}-keycloak-realm"
 
   extraVolumeMounts:
     - name: tmp
@@ -596,7 +596,7 @@ superset:
       echo "Adding Trino datasource..."
       superset set-database-uri \
         --database-name "Trino (Data Platform)" \
-        --uri "trino://trino-user@{{ .Release.Name }}-trino:8080/iceberg" || true
+        --uri "trino://trino-user@trino.compute.svc.cluster.local:8080/iceberg" || true
       echo "Superset initialized successfully"
 
   celeryWorker:
