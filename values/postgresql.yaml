@@ -7,6 +7,9 @@
 # HINWEIS (CLAUDE.md, Known Issue #6): Bitnami hat sein klassisches
 # Helm-Repository (charts.bitnami.com) im August 2025 zugunsten der OCI-Registry
 # abgelöst. Vor `helm dependency update`: Chart-Version und Image-Tags verifizieren.
+#
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: data-storage (PostgreSQL + MinIO)
 
 postgresql:
   enabled: true

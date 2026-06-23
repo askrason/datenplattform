@@ -13,6 +13,8 @@
 # - Kataloge: minio (Hive), iceberg, postgresql
 # - Spill-to-Disk für große Queries aktiviert
 # ============================================================
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: compute (Airflow + Trino + OpenMetadata)
 
 trino:
   enabled: true

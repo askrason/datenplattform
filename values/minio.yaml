@@ -8,6 +8,8 @@
 #
 # WICHTIG: Alle Consumers verwenden standardisierte S3 SDK mit
 # endpoint_url Override – KEIN proprietäres MinIO SDK!
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: data-storage (PostgreSQL + MinIO)
 
 minio:
   enabled: true

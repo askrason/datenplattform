@@ -10,6 +10,8 @@
 # Chart-Repo: https://apache.github.io/superset
 # Dokumentation: https://superset.apache.org/docs/
 # ============================================================
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: analytics (Superset + Metabase)
 
 superset:
   enabled: true
