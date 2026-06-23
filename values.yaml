@@ -23,6 +23,38 @@ global:
   namespaceSuffix: ""                   # z.B. "-prod" / "-staging"
 
 # ============================================================
+# NAMESPACE-STRUKTUR (Multi-Namespace Architecture)
+# ============================================================
+# TICKET-013-015 Refactor: Umbrella Chart deployt zu 7 separaten Namespaces
+# statt alles in einen. Jede Komponente sitzt in logisch zusammenhängender
+# Gruppe. Basis: data-platform (Cluster), darunter 7 Namespaces (s.u.).
+#
+# Einzelne Sub-Charts (vault, postgresql, etc.) wissen NICHT,
+# dass sie in verschiedene Namespaces gehen – das ist Umbrella-Logic.
+# Helm setzt die `.Values.namespaces.*` Werte lokal pro Chart.
+namespaces:
+  # Secrets Management (Day-1, muss existieren bevor andere Namespaces starten)
+  vault: "vault"
+
+  # Data Storage Layer
+  dataStorage: "data-storage"
+
+  # Compute & Orchestration (Airflow, Trino, Governance)
+  compute: "compute"
+
+  # Analytics & Business Intelligence
+  analytics: "analytics"
+
+  # Identity & Access Control
+  auth: "auth"
+
+  # Ingress & Network Management
+  ingress: "ingress"
+
+  # Monitoring & Observability (optional, future)
+  monitoring: "monitoring"
+
+# ============================================================
 # NETZWERK-POLICIES (Umbrella-Level)
 # ============================================================
 # Globales Flag zum Aktivieren/Deaktivieren aller NetworkPolicies.
