@@ -1,18 +1,19 @@
 {{- if .Values.airflow.enabled }}
-# RBAC für Airflow KubernetesExecutor
+# TICKET-013-015: Multi-Namespace Refactor
+# RBAC für Airflow KubernetesExecutor (compute/)
 # ============================================================
 # Der Airflow Scheduler muss die Erlaubnis haben, Worker-Pods
 # zu erstellen, zu löschen und zu patchen (KubernetesExecutor).
 #
 # Dies ist eine Namespace-scoped Role (NICHT ClusterRole),
-# weil Worker-Pods nur im Airflow-Namespace spawnen.
+# weil Worker-Pods nur im Airflow-Namespace (compute/) spawnen.
 
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ .Release.Name }}-airflow-worker
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.compute }}
   labels:
     {{- include "data-platform.labels" . | nindent 4 }}
     component: airflow
@@ -22,7 +23,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ .Release.Name }}-airflow-kubernetes-executor
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.compute }}
   labels:
     {{- include "data-platform.labels" . | nindent 4 }}
     component: airflow
@@ -64,7 +65,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ .Release.Name }}-airflow-kubernetes-executor
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.compute }}
   labels:
     {{- include "data-platform.labels" . | nindent 4 }}
     component: airflow
@@ -77,6 +78,6 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: "{{ .Release.Name }}-airflow-scheduler"
-    namespace: {{ .Release.Namespace }}
+    namespace: {{ .Values.namespaces.compute }}
 
 {{- end }}

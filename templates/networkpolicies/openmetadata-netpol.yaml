@@ -20,7 +20,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ .Release.Name }}-openmetadata-netpol
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.compute }}
   labels:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: openmetadata
@@ -33,79 +33,97 @@ spec:
     - Egress
 
   # ============================================================
-  # INGRESS: Wer darf mit OpenMetadata sprechen?
+  # INGRESS: Wer darf mit OpenMetadata sprechen? (Cross-Namespace)
   # ============================================================
   ingress:
-    # --- Ingress Controller → OM UI/API ---
+    # --- Ingress Controller (ingress/) → OM UI/API ---
     - from:
         - namespaceSelector:
             matchLabels:
-              name: ingress-nginx
+              kubernetes.io/metadata.name: {{ .Values.namespaces.ingress }}
       ports:
         - protocol: TCP
           port: 8585
 
-    # --- Airflow Scheduler → OM (REST-API für Metadaten-Push) ---
+    # --- Airflow (compute/) → OM REST-API ---
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: airflow
-              component: scheduler
       ports:
         - protocol: TCP
           port: 8585
 
   # ============================================================
-  # EGRESS: Wohin darf OpenMetadata verbindungen herstellen?
+  # EGRESS: Wohin darf OpenMetadata verbindungen herstellen? (Cross-Namespace)
   # ============================================================
   egress:
     # --- DNS ---
     - to:
-        - namespaceSelector: {}
+        - podSelector: {}
       ports:
         - protocol: UDP
           port: 53
+        - protocol: TCP
+          port: 53
 
-    # --- PostgreSQL (Metastore) ---
+    # --- PostgreSQL (data-storage/) ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.dataStorage }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: postgresql
       ports:
         - protocol: TCP
           port: 5432
 
-    # --- Airflow Webserver (REST-API für Pipeline-Metadaten) ---
+    # --- Airflow (compute/) REST-API ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: airflow
-              component: webserver
       ports:
         - protocol: TCP
           port: 8080
 
-    # --- Trino (SQL-Metadaten crawlen) ---
+    # --- Trino (compute/) SQL-Metadaten ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: trino
       ports:
         - protocol: TCP
           port: 8080
 
-    # --- MinIO (Storage-Metadaten crawlen) ---
+    # --- MinIO (data-storage/) Storage-Metadaten ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.dataStorage }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: minio
       ports:
         - protocol: TCP
           port: 9000
 
-    # --- Keycloak (OIDC Token Validation) ---
+    # --- Keycloak (auth/) OIDC ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.auth }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: keycloak
       ports:
@@ -114,12 +132,34 @@ spec:
         - protocol: TCP
           port: 8443
 
-    # --- Elasticsearch / OpenSearch (OM-intern für Search-Index) ---
+    # --- Vault (vault/) für Secrets ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.vault }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+      ports:
+        - protocol: TCP
+          port: 8200
+
+    # --- Elasticsearch / OpenSearch (OM-intern für Search) ---
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: elasticsearch
       ports:
         - protocol: TCP
           port: 9200
+
+    # --- K8s API ---
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
 {{- end }}

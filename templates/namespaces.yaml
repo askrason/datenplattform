@@ -1,0 +1,39 @@
+{{- /*
+TICKET-013-015: Multi-Namespace Architecture
+===============================================
+
+Erstelle alle Namespaces, die vom Umbrella Chart definiert sind.
+Diese Namespaces sind die logischen Container für die verschiedenen
+Komponenten-Gruppen.
+
+Struktur (in values.yaml definiert):
+  - vault/
+  - data-storage/
+  - compute/
+  - analytics/
+  - auth/
+  - ingress/
+  - monitoring/ (optional)
+
+Reihenfolge ist relevant: Vault muss existieren BEVOR andere Namespaces
+ihre ExternalSecrets starten (das wird durch Helm chart dependencies
+gesteuert, diese Templates sind nur die K8s-Ressourcen).
+*/ -}}
+
+{{- if .Values.namespaces }}
+{{- range $key, $namespace := .Values.namespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "data-platform.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    namespace.type: "component-group"
+  annotations:
+    description: "Component namespace for data-platform"
+{{- end }}
+{{- end }}

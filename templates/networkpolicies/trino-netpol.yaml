@@ -12,7 +12,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ .Release.Name }}-trino-netpol
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.compute }}
   labels:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: trino
@@ -25,49 +25,63 @@ spec:
     - Egress
 
   # ============================================================
-  # INGRESS: Wer darf mit Trino sprechen?
+  # INGRESS: Wer darf mit Trino sprechen? (Cross-Namespace)
   # ============================================================
   ingress:
-    # --- Superset → Trino (BI Queries) ---
+    # --- Superset (analytics/) → Trino ---
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.analytics }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: superset
       ports:
         - protocol: TCP
           port: 8080
 
-    # --- Metabase → Trino (BI Queries) ---
+    # --- Metabase (analytics/) → Trino ---
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.analytics }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: metabase
       ports:
         - protocol: TCP
           port: 8080
 
-    # --- OpenMetadata → Trino (Metadaten-Crawling) ---
+    # --- OpenMetadata (compute/) → Trino ---
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: openmetadata
       ports:
         - protocol: TCP
           port: 8080
 
-    # --- Airflow Worker → Trino (DAG-Queries über dbt-trino) ---
+    # --- Airflow (compute/) → Trino ---
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: airflow
-              component: worker
       ports:
         - protocol: TCP
           port: 8080
 
-    # --- Trino Coordinator ↔ Worker (interne Cluster-Kommunikation) ---
+    # --- Trino (compute/) internal Coordinator ↔ Worker ---
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: trino
       ports:
@@ -76,47 +90,70 @@ spec:
         - protocol: TCP
           port: 8081
 
-    # --- Optional: Ingress Controller (für Trino UI) ---
+    # --- Ingress Controller (ingress/) ---
     - from:
         - namespaceSelector:
             matchLabels:
-              name: ingress-nginx
+              kubernetes.io/metadata.name: {{ .Values.namespaces.ingress }}
       ports:
         - protocol: TCP
           port: 8080
 
   # ============================================================
-  # EGRESS: Wohin darf Trino verbindungen herstellen?
+  # EGRESS: Wohin darf Trino verbindungen herstellen? (Cross-Namespace)
   # ============================================================
   egress:
-    # --- DNS Queries (Port 53) ---
+    # --- DNS (Port 53) ---
     - to:
-        - namespaceSelector: {}
+        - podSelector: {}
       ports:
         - protocol: UDP
           port: 53
+        - protocol: TCP
+          port: 53
 
-    # --- MinIO (S3 / Hive / Iceberg Katalog) ---
+    # --- MinIO (data-storage/) - S3 / Hive / Iceberg Katalog ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.dataStorage }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: minio
       ports:
         - protocol: TCP
           port: 9000
 
-    # --- PostgreSQL (PostgreSQL-Katalog) ---
+    # --- PostgreSQL (data-storage/) - PostgreSQL-Katalog ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.dataStorage }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: postgresql
       ports:
         - protocol: TCP
           port: 5432
 
+    # --- Keycloak (auth/) - OIDC Token Validation ---
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.auth }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+
     # --- Trino-interne Kommunikation (Coordinator ↔ Worker) ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: trino
       ports:
@@ -124,4 +161,11 @@ spec:
           port: 8080
         - protocol: TCP
           port: 8081
+
+    # --- K8s API ---
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
 {{- end }}

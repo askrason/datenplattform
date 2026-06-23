@@ -1,0 +1,48 @@
+{{- if .Values.networkPolicies.enabled }}
+# NetworkPolicy: Default Deny for ingress/ namespace
+# ============================================================
+# Deny-by-default für ingress/ Namespace.
+# ingress-nginx und cert-manager erhalten explizite Allow-Rules.
+#
+# Erlaubte Eingangsverbindungen in ingress/:
+#   - External traffic (Port 80, 443) zum Ingress Controller
+#
+# TICKET-013-015: Multi-Namespace Refactor
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "data-platform.fullname" . }}-default-deny-ingress
+  namespace: {{ .Values.namespaces.ingress }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: ingress
+    policy: default-deny
+
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # Deny all ingress by default (explicit allows via ingress NetPol)
+  ingress: []
+
+  # Allow egress: K8s API, DNS, external services
+  egress:
+    # K8s API Server
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # DNS (Service Discovery)
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

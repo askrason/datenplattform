@@ -11,6 +11,9 @@
 #
 # ADR-003: Vault + ESO bilden die Basis für sichere Secret-Verwaltung.
 # Kein Klartext in values.yaml – alle Apps referenzieren existingSecret.
+#
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: vault (Day-1 secrets management)
 
 vault:
   enabled: true

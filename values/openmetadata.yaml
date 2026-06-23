@@ -11,6 +11,8 @@
 # WICHTIG (ADR-001): OM-eigenes Airflow wird deaktiviert.
 # Stattdessen REST-API-Connector zu Airflow aus TICKET-005.
 # ============================================================
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: compute (Airflow + Trino + OpenMetadata)
 
 openmetadata:
   enabled: true

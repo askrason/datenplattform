@@ -13,6 +13,8 @@
 # - Kataloge: minio (Hive), iceberg, postgresql
 # - Spill-to-Disk für große Queries aktiviert
 # ============================================================
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: compute (Airflow + Trino + OpenMetadata)
 
 trino:
   enabled: true
@@ -87,6 +89,16 @@ trino:
         cpu: 4000m
         memory: 8Gi
 
+    # ============================================================
+    # Volumes für Spill-to-Disk (Coordinator)
+    # ============================================================
+    extraVolumes:
+      - name: trino-spill
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: trino-spill
+        mountPath: /tmp/trino-spill
+
   worker:
     replicas: 3
 
@@ -114,18 +126,9 @@ trino:
         cpu: 8000m
         memory: 16Gi
 
-  # ============================================================
-  # Volumes für Spill-to-Disk
-  # ============================================================
-  coordinator:
-    extraVolumes:
-      - name: trino-spill
-        emptyDir: {}
-    extraVolumeMounts:
-      - name: trino-spill
-        mountPath: /tmp/trino-spill
-
-  worker:
+    # ============================================================
+    # Volumes für Spill-to-Disk (Worker)
+    # ============================================================
     extraVolumes:
       - name: trino-spill
         emptyDir: {}

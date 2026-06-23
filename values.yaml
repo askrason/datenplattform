@@ -23,6 +23,38 @@ global:
   namespaceSuffix: ""                   # z.B. "-prod" / "-staging"
 
 # ============================================================
+# NAMESPACE-STRUKTUR (Multi-Namespace Architecture)
+# ============================================================
+# TICKET-013-015 Refactor: Umbrella Chart deployt zu 7 separaten Namespaces
+# statt alles in einen. Jede Komponente sitzt in logisch zusammenhängender
+# Gruppe. Basis: data-platform (Cluster), darunter 7 Namespaces (s.u.).
+#
+# Einzelne Sub-Charts (vault, postgresql, etc.) wissen NICHT,
+# dass sie in verschiedene Namespaces gehen – das ist Umbrella-Logic.
+# Helm setzt die `.Values.namespaces.*` Werte lokal pro Chart.
+namespaces:
+  # Secrets Management (Day-1, muss existieren bevor andere Namespaces starten)
+  vault: "vault"
+
+  # Data Storage Layer
+  dataStorage: "data-storage"
+
+  # Compute & Orchestration (Airflow, Trino, Governance)
+  compute: "compute"
+
+  # Analytics & Business Intelligence
+  analytics: "analytics"
+
+  # Identity & Access Control
+  auth: "auth"
+
+  # Ingress & Network Management
+  ingress: "ingress"
+
+  # Monitoring & Observability (optional, future)
+  monitoring: "monitoring"
+
+# ============================================================
 # NETZWERK-POLICIES (Umbrella-Level)
 # ============================================================
 # Globales Flag zum Aktivieren/Deaktivieren aller NetworkPolicies.
@@ -233,7 +265,7 @@ trino:
       connector.name=hive
       hive.metastore=file
       hive.metastore.catalog.dir=s3://data-raw/
-      hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
+      hive.s3.endpoint=http://minio.data-storage.svc.cluster.local:9000
       hive.s3.path-style-access=true
       hive.s3.ssl.enabled=false
       hive.s3.aws-credentials-provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
@@ -244,14 +276,14 @@ trino:
       iceberg.catalog.type=hive_metastore
       hive.metastore=file
       hive.metastore.catalog.dir=s3://data-processed/
-      hive.s3.endpoint=http://{{ .Release.Name }}-minio:9000
+      hive.s3.endpoint=http://minio.data-storage.svc.cluster.local:9000
       hive.s3.path-style-access=true
       hive.s3.ssl.enabled=false
 
     # --- PostgreSQL Catalog ---
     postgresql.properties: |
       connector.name=postgresql
-      connection-url=jdbc:postgresql://{{ .Release.Name }}-postgresql:5432/
+      connection-url=jdbc:postgresql://postgresql.data-storage.svc.cluster.local:5432/
       connection-user=${ENV:TRINO_PG_USER}
       connection-password=${ENV:TRINO_PG_PASSWORD}
 
@@ -340,7 +372,7 @@ keycloak:
 
   externalDatabase:
     type: postgresql
-    host: "{{ .Release.Name }}-postgresql"
+    host: "postgresql.data-storage.svc.cluster.local"
     port: 5432
     database: keycloak
     username: keycloak
@@ -409,7 +441,7 @@ openmetadata:
 
   config:
     database:
-      host: "{{ .Release.Name }}-postgresql"
+      host: "postgresql.data-storage.svc.cluster.local"
       port: 5432
       driverClass: "org.postgresql.Driver"
       dbScheme: "postgresql"
@@ -421,7 +453,7 @@ openmetadata:
   pipelineServiceClientConfig:
     enabled: true
     className: "org.openmetadata.service.clients.pipeline.airflow.AirflowRESTClient"
-    apiEndpoint: "http://{{ .Release.Name }}-airflow-webserver:8080"
+    apiEndpoint: "http://airflow.compute.svc.cluster.local:8080"
     metadataApiEndpoint: "http://{{ .Release.Name }}-openmetadata:8585/api"
     verifySSL: false
     secretsManagerCredentials:
@@ -509,7 +541,7 @@ superset:
 
   supersetNode:
     connections:
-      db_host: "{{ .Release.Name }}-postgresql"
+      db_host: "postgresql.data-storage.svc.cluster.local"
       db_port: 5432
       db_name: superset
       db_user: superset
@@ -564,7 +596,7 @@ superset:
       echo "Adding Trino datasource..."
       superset set-database-uri \
         --database-name "Trino (Data Platform)" \
-        --uri "trino://trino-user@{{ .Release.Name }}-trino:8080/iceberg" || true
+        --uri "trino://trino-user@trino.compute.svc.cluster.local:8080/iceberg" || true
       echo "Superset initialized successfully"
 
   celeryWorker:
@@ -653,7 +685,7 @@ metabase:
 
   database:
     type: postgres
-    host: "{{ .Release.Name }}-postgresql"
+    host: "postgresql.data-storage.svc.cluster.local"
     port: 5432
     dbname: metabase
     existingSecret: metabase-db-credentials

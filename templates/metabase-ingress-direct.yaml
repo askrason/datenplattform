@@ -16,7 +16,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ .Release.Name }}-metabase-direct
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.analytics }}
   labels:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: metabase

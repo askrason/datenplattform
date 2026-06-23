@@ -8,6 +8,8 @@
 #
 # WICHTIG: Custom Image airflow-dbt muss vorab gebaut und in die
 # Container Registry gepusht werden (siehe files/airflow-dockerfile/).
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: compute (Airflow + Trino + OpenMetadata)
 
 airflow:
   enabled: true

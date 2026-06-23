@@ -1,4 +1,6 @@
 {{- if and .Values.airflow.enabled .Values.networkPolicies.enabled }}
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: compute/
 # NetworkPolicy: Airflow
 # ============================================================
 # Airflow hat komplexe Netzwerk-Anforderungen:
@@ -12,7 +14,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "data-platform.fullname" . }}-airflow-netpol
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.compute }}
   labels:
     {{- include "data-platform.labels" . | nindent 4 }}
     component: airflow
@@ -31,20 +33,21 @@ spec:
   # Ingress: Wer darf zu Airflow verbinden?
   # ============================================================
   ingress:
-    # --- Port 8080: Webserver UI ---
-    # Von Ingress Controller
+    # --- Port 8080: Webserver UI (ingress/) ---
     - from:
         - namespaceSelector:
             matchLabels:
-              name: ingress-nginx  # ANPASSEN: Namespace des Ingress Controllers
+              kubernetes.io/metadata.name: {{ .Values.namespaces.ingress }}
       ports:
         - protocol: TCP
           port: 8080
 
-    # --- Port 8080: OpenMetadata REST API ---
-    # OpenMetadata crawled Airflow DAGs über REST API
+    # --- Port 8080: OpenMetadata REST API (compute/) ---
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: openmetadata
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -56,9 +59,12 @@ spec:
   # Egress: Wohin darf Airflow verbinden?
   # ============================================================
   egress:
-    # --- PostgreSQL (Metastore) ---
+    # --- PostgreSQL (data-storage/) ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.dataStorage }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: postgresql
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -66,9 +72,12 @@ spec:
         - protocol: TCP
           port: 5432
 
-    # --- MinIO (S3-API für Logs + DAG-Artefakte) ---
+    # --- MinIO (data-storage/) ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.dataStorage }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: minio
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -76,9 +85,12 @@ spec:
         - protocol: TCP
           port: 9000
 
-    # --- Trino (dbt-trino Adapter) ---
+    # --- Trino (compute/) ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: trino
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -86,9 +98,12 @@ spec:
         - protocol: TCP
           port: 8080
 
-    # --- OpenMetadata (Metadaten-Push via openmetadata-ingestion) ---
+    # --- OpenMetadata (compute/) ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: openmetadata
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -96,9 +111,12 @@ spec:
         - protocol: TCP
           port: 8585
 
-    # --- Keycloak (OIDC Token Validation) ---
+    # --- Keycloak (auth/) ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.auth }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: keycloak
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -107,6 +125,19 @@ spec:
           port: 8080
         - protocol: TCP
           port: 8443
+
+    # --- Vault (vault/) ---
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.vault }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8200
 
     # --- Kubernetes API Server (KubernetesExecutor spawnt Pods) ---
     - to:

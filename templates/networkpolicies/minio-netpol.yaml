@@ -3,16 +3,17 @@
 # ============================================================
 # MinIO läuft im Distributed-Modus und wird über zwei Ports
 # exponiert:
-#   - Port 9000: S3-API (von Airflow, Trino, OpenMetadata)
-#   - Port 9001: Console/Web-UI (von Ingress Controller)
+#   - Port 9000: S3-API (von Airflow, Trino, OpenMetadata aus compute/)
+#   - Port 9001: Console/Web-UI (von Ingress Controller aus ingress/)
 #
-# Zugriff ist auf diese Quellen eingeschränkt.
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: data-storage/
 
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "data-platform.fullname" . }}-minio-netpol
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.dataStorage }}
   labels:
     {{- include "data-platform.labels" . | nindent 4 }}
     component: minio
@@ -31,10 +32,14 @@ spec:
   # Ingress: Wer darf zu MinIO verbinden?
   # ============================================================
   ingress:
-    # --- Port 9000: S3 API ---
-    # Airflow (Logs, DAGs, dbt Artifacts)
+    # --- Port 9000: S3 API (Cross-Namespace) ---
+
+    # Airflow (compute/)
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: airflow
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -42,9 +47,12 @@ spec:
         - protocol: TCP
           port: 9000
 
-    # Trino (Coordinator + Worker für S3 Catalog)
+    # Trino (compute/)
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: trino
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -52,9 +60,12 @@ spec:
         - protocol: TCP
           port: 9000
 
-    # OpenMetadata (Metadaten-Crawling)
+    # OpenMetadata (compute/)
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: openmetadata
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -62,13 +73,11 @@ spec:
         - protocol: TCP
           port: 9000
 
-    # --- Port 9001: MinIO Console ---
-    # Von Ingress Controller Namespace (Web-UI via Ingress)
-    # Falls Ingress im eigenen Namespace: explizite Allow-Rule
+    # --- Port 9001: MinIO Console (ingress/) ---
     - from:
         - namespaceSelector:
             matchLabels:
-              name: ingress-nginx  # ANPASSEN: der eigentliche Namespace des Ingress Controllers
+              kubernetes.io/metadata.name: {{ .Values.namespaces.ingress }}
       ports:
         - protocol: TCP
           port: 9001

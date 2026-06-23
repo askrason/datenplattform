@@ -13,6 +13,8 @@
 #
 # HA-Architektur: 2 Replicas mit Infinispan-Clustering
 # ============================================================
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: auth (Keycloak (OIDC Identity Provider))
 
 keycloak:
   enabled: true
