@@ -21,7 +21,6 @@ README*
 CHANGELOG*
 LICENSE
 docs/
-docs/**/*
 
 # Scripts für Entwicklung
 scripts/
@@ -29,7 +28,6 @@ ci/
 
 # Tests & Validierung
 tests/
-test/**/*
 *.test.yaml
 *.spec.yaml
 
