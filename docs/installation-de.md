@@ -7,8 +7,14 @@ Production-ready Deployment der Data Platform Helm Chart auf Kubernetes.
 ## Übersicht
 
 Diese Anleitung behandelt das Deployment der kompletten Data Platform auf einem Kubernetes-Cluster (1.32+).
+
+**Version**: v1.1+ mit **Multi-Namespace-Architektur** (7 isolierte Namespaces statt Single-Namespace)
+- Siehe `docs/MULTI-NAMESPACE-REFACTOR-SUMMARY.md` für Details
+- Service Discovery über FQDN (z.B. `postgresql.data-storage.svc.cluster.local`)
+- Deny-by-default NetworkPolicies pro Namespace
+
 Für lokale Entwicklung siehe:
-- **k3s Dev**: `docs/k3s-dev-setup.md`
+- **k3s Dev**: `docs/k3s-dev-setup.md` (automated cluster setup)
 - **Engineer Dev**: `docs/engineer-dev-setup.md`
 - **Analyst Dev**: `docs/analyst-dev-setup.md`
 
@@ -72,7 +78,8 @@ cat CLAUDE.md | head -100
 ### Known Issues prüfen
 Besonders wichtig:
 - **Known Issue #6**: Bitnami OCI Migration (PostgreSQL, Keycloak Image-Tags)
-- **Known Issue #7**: Dev-Profile Secrets (nur für lokale Cluster)
+- **Known Issue #7**: Multi-Namespace Architektur (v1.1+) – Service Discovery via FQDN required
+- **Known Issue #8**: Dev-Profile Secrets (nur für lokale Cluster)
 
 ### values.yaml anpassen
 

@@ -328,7 +328,18 @@ resources:
      (kommerziell) oder Alternativ-Charts (z.B. CloudNativePG für PostgreSQL,
      Codecentric- oder offizielles Keycloak-Operator-Chart) evaluieren.
 
-7. **Dev-Profile (TICKET-013–015) und Secrets**: Die lokalen Dev-Environments
+7. **Multi-Namespace Architektur (v1.1, completed ✅)**: Das Chart deployed ab v1.1
+   in einer 7-Namespace-Struktur statt Single-Namespace:
+   - **Namespaces**: vault, data-storage, compute, analytics, auth, ingress, monitoring
+   - **Service Discovery**: Alle Cross-Namespace-Verbindungen verwenden FQDN
+     (z.B. `postgresql.data-storage.svc.cluster.local:5432` statt short names)
+   - **NetworkPolicies**: Deny-by-default pro Namespace + explizite Allow-Rules
+   - **Dokumentation**: siehe `docs/MULTI-NAMESPACE-REFACTOR-SUMMARY.md`, 
+     `docs/NAMESPACE-ASSIGNMENTS.md`, `docs/SERVICE-DISCOVERY-GUIDE.md`
+   - **Cluster-Setup**: `scripts/create-cluster-k3s.sh` erstellt alle Namespaces automatisch
+   - **Siehe auch**: ADR-006 (Security-Defaults bleiben identisch, nur räumlich separiert)
+
+8. **Dev-Profile (TICKET-013–015) und Secrets**: Die lokalen Dev-Environments
    für WSL2/k3s deployen aus Ressourcengründen teilweise OHNE Vault und
    External Secrets Operator (TICKET-014 "Engineer", TICKET-015 "Analyst";
    TICKET-013 "Full Stack" behält Vault, nur im Standalone-Modus). Da alle
