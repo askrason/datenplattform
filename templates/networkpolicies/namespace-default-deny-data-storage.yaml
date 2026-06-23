@@ -1,0 +1,49 @@
+{{- if .Values.networkPolicies.enabled }}
+# NetworkPolicy: Default Deny for data-storage/ namespace
+# ============================================================
+# Deny-by-default für data-storage/ Namespace.
+# PostgreSQL und MinIO erhalten explizite Allow-Rules.
+#
+# Erlaubte Eingangsverbindungen in data-storage/:
+#   - PostgreSQL (5432): Airflow, Superset, Metabase, OpenMetadata, Keycloak
+#   - MinIO (9000): Airflow, Trino, OpenMetadata
+#
+# TICKET-013-015: Multi-Namespace Refactor
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "data-platform.fullname" . }}-default-deny-data-storage
+  namespace: {{ .Values.namespaces.dataStorage }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: data-storage
+    policy: default-deny
+
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # Deny all ingress by default (explicit allows via component NetPols)
+  ingress: []
+
+  # Allow egress: K8s API, DNS only
+  egress:
+    # K8s API Server
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # DNS (Service Discovery)
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

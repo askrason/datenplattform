@@ -1,0 +1,50 @@
+{{- if .Values.networkPolicies.enabled }}
+# NetworkPolicy: Default Deny for compute/ namespace
+# ============================================================
+# Deny-by-default für compute/ Namespace.
+# Airflow, Trino, OpenMetadata erhalten explizite Allow-Rules.
+#
+# Erlaubte Eingangsverbindungen in compute/:
+#   - Airflow (8080): Ingress Controller
+#   - Trino (8080): OpenMetadata
+#   - OpenMetadata (8585): Ingress Controller
+#
+# TICKET-013-015: Multi-Namespace Refactor
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "data-platform.fullname" . }}-default-deny-compute
+  namespace: {{ .Values.namespaces.compute }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: compute
+    policy: default-deny
+
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # Deny all ingress by default (explicit allows via component NetPols)
+  ingress: []
+
+  # Allow egress: K8s API, DNS, cross-namespace services
+  egress:
+    # K8s API Server
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # DNS (Service Discovery)
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

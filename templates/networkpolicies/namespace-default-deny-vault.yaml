@@ -1,0 +1,48 @@
+{{- if .Values.networkPolicies.enabled }}
+# NetworkPolicy: Default Deny for vault/ namespace
+# ============================================================
+# Deny-by-default für vault/ Namespace.
+# Explizite Allows nur für dokumentierte Verbindungen.
+#
+# Erlaubte Eingangsverbindungen in vault/:
+#   - external-secrets (ESO) von vault/ selbst
+#
+# TICKET-013-015: Multi-Namespace Refactor
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "data-platform.fullname" . }}-default-deny-vault
+  namespace: {{ .Values.namespaces.vault }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: vault
+    policy: default-deny
+
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # Deny all ingress by default (explicit allows below via component NetPol)
+  ingress: []
+
+  # Allow egress: K8s API, DNS only
+  egress:
+    # K8s API Server (TokenReview für Kubernetes Auth)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # DNS (Service Discovery)
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

@@ -16,7 +16,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ .Release.Name }}-superset-netpol
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.analytics }}
   labels:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: superset
@@ -29,55 +29,87 @@ spec:
     - Egress
 
   # ============================================================
-  # INGRESS: Wer darf mit Superset sprechen?
+  # INGRESS: Wer darf mit Superset sprechen? (Cross-Namespace)
   # ============================================================
   ingress:
-    # --- Ingress Controller → Superset UI/API (Port 8088) ---
+    # --- Ingress Controller (ingress/) → Superset UI/API ---
     - from:
         - namespaceSelector:
             matchLabels:
-              name: ingress-nginx
+              kubernetes.io/metadata.name: {{ .Values.namespaces.ingress }}
       ports:
         - protocol: TCP
           port: 8088
 
   # ============================================================
-  # EGRESS: Wohin darf Superset verbindungen herstellen?
+  # EGRESS: Wohin darf Superset verbindungen herstellen? (Cross-Namespace)
   # ============================================================
   egress:
     # --- DNS ---
     - to:
-        - namespaceSelector: {}
+        - podSelector: {}
       ports:
         - protocol: UDP
           port: 53
+        - protocol: TCP
+          port: 53
 
-    # --- Trino (SQL-Queries, Port 8080) ---
+    # --- Trino (compute/) SQL-Queries ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: trino
       ports:
         - protocol: TCP
           port: 8080
 
-    # --- PostgreSQL (App-Metastore, Port 5432) ---
+    # --- PostgreSQL (data-storage/) App-Metastore ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.dataStorage }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: postgresql
       ports:
         - protocol: TCP
           port: 5432
 
-    # --- Redis (Celery Broker, Port 6379 – intern) ---
+    # --- Keycloak (auth/) OIDC Token Validation ---
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.auth }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8443
+
+    # --- Redis (analytics/) Celery Broker – intern ---
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.analytics }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: redis
       ports:
         - protocol: TCP
           port: 6379
+
+    # --- K8s API ---
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
 
     # --- Keycloak (OIDC Token Validation) ---
     - to:

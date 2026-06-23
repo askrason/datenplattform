@@ -4,20 +4,23 @@
 # PostgreSQL wird STRIKTE Zugriffskontrolle haben. Nur
 # explizit definierte Services dürfen sich verbinden.
 #
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: data-storage/
+#
 # Erlaubte Ingress-Quellen auf Port 5432:
-#   - Airflow (Scheduler, Webserver, Worker)
-#   - OpenMetadata
-#   - Superset
-#   - Metabase
-#   - Keycloak
-#   - Trino (PostgreSQL Connector)
-#   - Prometheus (Metrics auf Port 9187)
+#   - Airflow (compute/)
+#   - OpenMetadata (compute/)
+#   - Superset (analytics/)
+#   - Metabase (analytics/)
+#   - Keycloak (auth/)
+#   - Trino (compute/)
+#   - Prometheus (monitoring/) – optional
 
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "data-platform.fullname" . }}-postgresql-netpol
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.dataStorage }}
   labels:
     {{- include "data-platform.labels" . | nindent 4 }}
     component: postgresql
@@ -36,10 +39,14 @@ spec:
   # Ingress: Wer darf zu PostgreSQL verbinden?
   # ============================================================
   ingress:
-    # --- Port 5432: PostgreSQL Database ---
-    # Airflow (Metastore)
+    # --- Port 5432: PostgreSQL Database (Cross-Namespace) ---
+
+    # Airflow (compute/)
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: airflow
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -47,9 +54,12 @@ spec:
         - protocol: TCP
           port: 5432
 
-    # OpenMetadata (Metastore)
+    # OpenMetadata (compute/)
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: openmetadata
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -57,9 +67,12 @@ spec:
         - protocol: TCP
           port: 5432
 
-    # Superset (App-DB)
+    # Superset (analytics/)
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.analytics }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: superset
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -67,9 +80,12 @@ spec:
         - protocol: TCP
           port: 5432
 
-    # Metabase (App-DB)
+    # Metabase (analytics/)
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.analytics }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: metabase
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -77,9 +93,12 @@ spec:
         - protocol: TCP
           port: 5432
 
-    # Keycloak (App-DB)
+    # Keycloak (auth/)
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.auth }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: keycloak
               app.kubernetes.io/instance: {{ .Release.Name }}
@@ -87,21 +106,25 @@ spec:
         - protocol: TCP
           port: 5432
 
-    # Trino (PostgreSQL Connector für Metadaten-Queries)
+    # Trino (compute/)
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.compute }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: trino
               app.kubernetes.io/instance: {{ .Release.Name }}
-              component: coordinator
       ports:
         - protocol: TCP
           port: 5432
 
-    # --- Port 9187: Prometheus Metrics ---
-    # Prometheus Scraper (falls vorhanden)
+    # Prometheus (monitoring/) – optional
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.monitoring }}
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: prometheus
       ports:
@@ -112,7 +135,7 @@ spec:
   # Egress: Wohin darf PostgreSQL verbinden?
   # ============================================================
   egress:
-    # PostgreSQL antwortet auf DNS-Queries (Service Discovery)
+    # DNS (Service Discovery)
     - to:
         - podSelector: {}
       ports:

@@ -1,16 +1,19 @@
 {{- if and .Values.vault.enabled .Values.networkPolicies.enabled }}
 # NetworkPolicy: Vault
 # ============================================================
-# Vault läuft im Cluster und benötigt Zugriff auf:
-#   - Port 8200: HTTP-API (von ESO, Vault UI via Ingress)
+# Vault läuft im vault/ Namespace und benötigt Zugriff auf:
+#   - Port 8200: HTTP-API (von ESO im selben Namespace)
 #   - Port 8201: Raft-Cluster-Kommunikation (intern zwischen Vault-Pods)
 #   - K8s API Server: TokenReview für Kubernetes Auth
+#
+# TICKET-013-015: Multi-Namespace Refactor
+# Namespace: vault/ (Day-1 secrets management)
 
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "data-platform.fullname" . }}-vault-netpol
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.namespaces.vault }}
   labels:
     {{- include "data-platform.labels" . | nindent 4 }}
     component: vault

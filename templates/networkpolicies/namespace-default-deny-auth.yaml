@@ -1,0 +1,49 @@
+{{- if .Values.networkPolicies.enabled }}
+# NetworkPolicy: Default Deny for auth/ namespace
+# ============================================================
+# Deny-by-default für auth/ Namespace.
+# Keycloak erhält explizite Allow-Rules.
+#
+# Erlaubte Eingangsverbindungen in auth/:
+#   - Keycloak (8080): ALL namespaces (OIDC token validation)
+#   - Keycloak (8080): Ingress Controller
+#
+# TICKET-013-015: Multi-Namespace Refactor
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "data-platform.fullname" . }}-default-deny-auth
+  namespace: {{ .Values.namespaces.auth }}
+  labels:
+    {{- include "data-platform.labels" . | nindent 4 }}
+    component: auth
+    policy: default-deny
+
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # Deny all ingress by default (explicit allows via component NetPols)
+  ingress: []
+
+  # Allow egress: K8s API, DNS, PostgreSQL
+  egress:
+    # K8s API Server
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # DNS (Service Discovery)
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
