@@ -25,6 +25,12 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CLUSTER_NAME="data-platform"
 NAMESPACE="data-platform"
 
+# TICKET-013-015: Multi-Namespace Architecture
+# Note: This script creates the cluster + base namespace.
+# The Helm chart will create the 7 component namespaces:
+#   vault/, data-storage/, compute/, analytics/, auth/, ingress/, monitoring/
+# See: docs/MULTI-NAMESPACE-REFACTOR-SUMMARY.md
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
