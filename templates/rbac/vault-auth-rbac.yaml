@@ -1,5 +1,6 @@
 {{- if and .Values.vault.enabled .Values.external-secrets.enabled }}
-# RBAC für Vault Kubernetes Authentication
+# TICKET-013-015: Multi-Namespace Refactor
+# RBAC für Vault Kubernetes Authentication (vault/)
 # ============================================================
 # Vault benötigt die Möglichkeit, K8s ServiceAccount Tokens zu validieren.
 # Dies geschieht über die Kubernetes API-Gruppe "authentication.k8s.io"
@@ -40,5 +41,5 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ .Release.Name }}-vault
-    namespace: {{ .Release.Namespace }}
+    namespace: {{ .Values.namespaces.vault }}
 {{- end }}
